@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anmelden · Folderpost</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1B1D'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23D0764C'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<style>
+  body {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px;
+  }
+  .anmelde-rahmen {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    width: 100%; max-width: 880px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.32);
+  }
+  @media (max-width: 760px) { .anmelde-rahmen { grid-template-columns: 1fr; } }
+
+  .anmelde-links { padding: 38px 36px; }
+  .anmelde-marke { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .anmelde-marke h1 { font-size: 19px; }
+  .anmelde-marke p { margin: 3px 0 0; font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
+
+  .anmelde-form label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 6px; }
+  .anmelde-form input {
+    width: 100%; background: var(--bg-inset); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 12px; font-size: 14px; font-family: var(--font-sans); margin-bottom: 16px;
+  }
+  .anmelde-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .anmelde-form button { width: 100%; padding: 12px; font-size: 14px; }
+  .anmelde-fehler {
+    display: none; margin-bottom: 14px; padding: 10px 12px;
+    background: var(--error-dim); border: 1px solid var(--error);
+    border-radius: 8px; font-size: 12.5px; color: var(--text);
+  }
+  .anmelde-fehler.sichtbar { display: block; }
+
+  .anmelde-rechts {
+    padding: 38px 32px; background: var(--bg-inset);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  @media (max-width: 760px) { .anmelde-rechts { border-left: none; border-top: 1px solid var(--border); } }
+  .status-titel {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-faint); margin: 0;
+  }
+  .status-kachel {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 16px;
+  }
+  .status-wert { font-family: var(--font-mono); font-size: 26px; font-weight: 700; line-height: 1; }
+  .status-name { font-size: 11.5px; color: var(--text-dim); margin-top: 5px; }
+  .status-zeile { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .status-wert.ok { color: var(--success); }
+  .status-wert.fehler { color: var(--error); }
+  .status-fuss { font-size: 11px; color: var(--text-faint); font-family: var(--font-mono); }
+  .status-punkt {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); margin-right: 6px;
+  }
+  .status-punkt.aus { background: var(--text-faint); }
+
+  .job-liste {
+    display: flex; flex-direction: column; gap: 5px;
+    max-height: 210px; overflow-y: auto;
+  }
+  .job-eintrag {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 10px; font-size: 12.5px;
+  }
+  .job-eintrag .punkt { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .job-eintrag .punkt.bereit { background: var(--success); }
+  .job-eintrag .punkt.laeuft { background: var(--accent); animation: pulsieren 1.1s ease-in-out infinite; }
+  .job-eintrag .punkt.fehlerhaft { background: var(--error); box-shadow: 0 0 0 3px var(--error-dim); }
+  .job-eintrag .punkt.letzterFehler { background: var(--error); }
+  .job-eintrag .punkt.ausserhalb { background: var(--warning); }
+  .job-eintrag .punkt.pausiert { background: var(--text-faint); }
+  @keyframes pulsieren { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .job-eintrag .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-eintrag .lage { font-size: 10.5px; color: var(--text-faint); font-family: var(--font-mono); white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+  .job-eintrag.laeuft .lage { color: var(--accent); }
+  .job-eintrag.fehlerhaft { border-color: var(--error); }
+  .job-eintrag.fehlerhaft .lage { color: var(--error); }
+</style>
+</head>
+<body>
+
+<div class="anmelde-rahmen">
+  <div class="anmelde-links">
+    <div class="anmelde-marke">
+      <span class="brand-mark"><span class="brand-mark-dot"></span></span>
+      <div>
+        <h1 id="marke-name">Folderpost</h1>
+        <p id="marke-sub">Bitte anmelden</p>
+      </div>
+    </div>
+
+    <div class="anmelde-fehler" id="fehler"></div>
+
+    <form class="anmelde-form" id="form">
+      <label for="name">Benutzername</label>
+      <input type="text" id="name" autocomplete="username" autofocus required>
+
+      <label for="passwort">Passwort</label>
+      <input type="password" id="passwort" autocomplete="current-password" required>
+
+      <button type="submit" class="btn btn-primary" id="btn">Anmelden</button>
+    </form>
+  </div>
+
+  <div class="anmelde-rechts">
+    <p class="status-titel">Betriebsstatus</p>
+
+    <div class="status-kachel">
+      <div class="status-wert" id="s-aktiv">–</div>
+      <div class="status-name"><span class="status-punkt" id="s-punkt"></span><span id="s-aktiv-text">aktive Jobs</span></div>
+    </div>
+
+    <div class="status-zeile">
+      <div class="status-kachel">
+        <div class="status-wert ok" id="s-erfolg">–</div>
+        <div class="status-name">Erfolge · 7 Tage</div>
+      </div>
+      <div class="status-kachel">
+        <div class="status-wert fehler" id="s-fehler">–</div>
+        <div class="status-name">Fehler · 7 Tage</div>
+      </div>
+    </div>
+
+    <div id="job-liste-bereich" style="display:none">
+      <p class="status-titel" style="margin-top:4px">Jobs</p>
+      <div class="job-liste" id="job-liste"></div>
+    </div>
+
+    <p class="status-fuss" id="s-letzte">Letzte Übertragung: –</p>
+    <p class="status-fuss" id="s-version" style="margin-top:-8px"></p>
+  </div>
+</div>
+
+<script>
+  function escapeHtml(t) {
+    return String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function fmtZeit(iso) {
+    if (!iso) return '–';
+    const d = new Date(iso);
+    const minuten = Math.round((Date.now() - d.getTime()) / 60000);
+    if (minuten < 1) return 'gerade eben';
+    if (minuten < 60) return `vor ${minuten} Min.`;
+    if (minuten < 1440) return `vor ${Math.round(minuten / 60)} Std.`;
+    return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function ladeStatus() {
+    try {
+      const r = await fetch('/api/oeffentlicher-status').then((x) => x.json());
+      document.getElementById('s-aktiv').textContent = `${r.jobsAktiv}/${r.jobsGesamt}`;
+      document.getElementById('s-aktiv-text').textContent = r.jobsAktiv > 0 ? 'Jobs laufen' : 'kein Job aktiv';
+      document.getElementById('s-punkt').classList.toggle('aus', r.jobsAktiv === 0);
+      if (r.akzentFarbe) {
+        document.documentElement.style.setProperty('--accent', r.akzentFarbe);
+      }
+      if (r.logoDatenUrl) {
+        const marke = document.querySelector('.brand-mark');
+        if (marke && !marke.querySelector('img')) {
+          marke.style.background = 'transparent';
+          marke.style.padding = '3px';
+          marke.style.overflow = 'hidden';
+          const punkt = marke.querySelector('.brand-mark-dot');
+          if (punkt) punkt.style.display = 'none';
+          const bild = document.createElement('img');
+          bild.src = r.logoDatenUrl;
+          bild.alt = '';
+          bild.style.maxWidth = '100%';
+          bild.style.maxHeight = '100%';
+          bild.style.objectFit = 'contain';
+          marke.appendChild(bild);
+        }
+      }
+      if (r.anzeigeName) {
+        document.getElementById('marke-name').textContent = r.anzeigeName;
+        document.getElementById('marke-sub').textContent = 'Folderpost · bitte anmelden';
+      }
+      document.getElementById('s-erfolg').textContent = r.erfolge7;
+      document.getElementById('s-fehler').textContent = r.fehler7;
+      document.getElementById('s-letzte').textContent = 'Letzte Übertragung: ' + fmtZeit(r.letzteUebertragung);
+      if (r.version) document.getElementById('s-version').textContent = 'Programmstand v' + r.version;
+
+      const bereich = document.getElementById('job-liste-bereich');
+      if (Array.isArray(r.jobs) && r.jobs.length) {
+        const text = {
+          bereit: 'läuft', laeuft: 'überträgt', fehlerhaft: 'Fehler',
+          letzterFehler: 'letzter Lauf fehlerhaft', ausserhalb: 'außerhalb Zeitfenster', pausiert: 'pausiert',
+        };
+        document.getElementById('job-liste').innerHTML = r.jobs.map((j) => `
+          <div class="job-eintrag ${j.zustand}">
+            <span class="punkt ${j.zustand}"></span>
+            <span class="name" title="${escapeHtml(j.name)}">${escapeHtml(j.name)}</span>
+            <span class="lage">${j.aktuelleDatei
+              ? escapeHtml(j.aktuelleDatei) + (j.weitereDateien ? ` +${j.weitereDateien}` : '')
+              : (j.zustand === 'fehlerhaft' ? j.fehlerFolge + '× Fehler' : text[j.zustand])}</span>
+          </div>`).join('');
+        bereich.style.display = 'block';
+      } else {
+        bereich.style.display = 'none';
+      }
+    } catch {
+      document.getElementById('s-letzte').textContent = 'Status nicht abrufbar';
+    }
+  }
+  ladeStatus();
+  setInterval(ladeStatus, 15000);
+
+  const fehlerEl = document.getElementById('fehler');
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn');
+    btn.disabled = true;
+    btn.textContent = 'Anmelden …';
+    fehlerEl.classList.remove('sichtbar');
+    try {
+      const antwort = await fetch('/api/anmelden', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('name').value,
+          passwort: document.getElementById('passwort').value,
+        }),
+      });
+      const daten = await antwort.json();
+      if (!antwort.ok) throw new Error(daten.error || 'Anmeldung fehlgeschlagen');
+      window.location.href = '/';
+    } catch (err) {
+      fehlerEl.textContent = err.message;
+      fehlerEl.classList.add('sichtbar');
+      document.getElementById('passwort').value = '';
+      document.getElementById('passwort').focus();
+      btn.disabled = false;
+      btn.textContent = 'Anmelden';
+    }
+  });
+</script>
+</body>
+</html>

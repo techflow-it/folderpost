@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Folderpost</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230F141C'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%237C6FFA'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"><span class="brand-mark-dot"></span></span>
+    <div>
+      <h1 id="brand-titel">
+        <span id="brand-name">Folderpost</span>
+        <span class="versions-nummer" id="versions-nummer" title="Installierter Programmstand"></span>
+      </h1>
+      <p class="brand-sub" id="brand-sub">UNC-Ordner <span class="arrow">→</span> curl <span class="arrow">→</span> Schnittstelle</p>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="uebersicht">Übersicht</button>
+    <button class="tab" data-tab="statistik">Statistik</button>
+  </nav>
+  <button class="btn-icon btn-sprache" id="btn-sprache" title="Sprache umschalten" aria-label="Sprache umschalten">EN</button>
+  <button class="btn-icon" id="btn-open-palette" aria-label="Schnellzugriff" title="Schnellzugriff (Strg+K)">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="8.7" cy="8.7" r="5.2" stroke="currentColor" stroke-width="1.5"/><path d="M16 16l-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+  <button class="btn-icon" id="btn-theme-toggle" aria-label="Hell/Dunkel umschalten" title="Hell/Dunkel umschalten">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M16.5 11.8A7 7 0 0 1 8.2 3.5a7 7 0 1 0 8.3 8.3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="btn-icon" id="btn-open-transfer" aria-label="Export / Import" title="Konfiguration exportieren oder importieren">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M6.5 8.5 10 5l3.5 3.5M10 5v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 13v2.5a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+  <button class="btn-icon" id="btn-open-settings" aria-label="Einstellungen" title="Einstellungen">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+      <path d="M8.6 2.8h2.8l.35 1.9a5.6 5.6 0 0 1 1.3.75l1.8-.68 1.4 2.42-1.45 1.23a5.6 5.6 0 0 1 0 1.5l1.45 1.23-1.4 2.42-1.8-.68a5.6 5.6 0 0 1-1.3.75l-.35 1.9H8.6l-.35-1.9a5.6 5.6 0 0 1-1.3-.75l-1.8.68-1.4-2.42 1.45-1.23a5.6 5.6 0 0 1 0-1.5L3.75 7.19l1.4-2.42 1.8.68a5.6 5.6 0 0 1 1.3-.75l.35-1.9Z"
+            stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+      <circle cx="10" cy="10" r="2.2" stroke="currentColor" stroke-width="1.3"/>
+    </svg>
+  </button>
+  <span class="benutzer-anzeige hidden" id="benutzer-anzeige">
+    <span id="benutzer-name"></span>
+    <button class="btn-icon" id="btn-abmelden" aria-label="Abmelden" title="Abmelden">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M12.5 6.5V5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 10h8m0 0-2.5-2.5M16.5 10 14 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </span>
+  <button class="btn btn-primary" id="btn-new-job">
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v11M2 7.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    Neuer Job
+  </button>
+</header>
+
+
+<main>
+
+<section class="tab-panel active" id="tab-uebersicht">
+  <div class="meldungen" id="meldungen">
+      <details class="selfcheck-banner hidden" id="selfcheck-banner"></details>
+  <details class="warning-banner hidden" id="warning-banner"></details>
+    </div>
+
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-tile" data-tile="jobs">
+      <div class="stat-top"><span class="stat-label">Jobs gesamt</span></div>
+      <div class="stat-value" id="sum-jobs">0</div>
+      <div class="state-breakdown" id="state-breakdown"></div>
+    </div>
+    <div class="stat-tile" data-tile="active">
+      <div class="stat-top"><span class="stat-label">Aktiv</span><span class="stat-dot accent"></span></div>
+      <div class="stat-value" id="sum-active">0</div>
+      <div class="state-breakdown" id="active-breakdown"></div>
+    </div>
+    <div class="stat-tile ok" data-tile="success">
+      <div class="stat-top"><span class="stat-label">Erfolge · 7 Tage</span></div>
+      <div class="stat-value" id="sum-success">0</div>
+      <svg class="sparkline" id="spark-success" viewBox="0 0 100 26" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="stat-tile err" data-tile="error">
+      <div class="stat-top"><span class="stat-label">Fehler · 7 Tage</span></div>
+      <div class="stat-value" id="sum-error">0</div>
+      <svg class="sparkline" id="spark-error" viewBox="0 0 100 26" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+
+  <div class="category-bar" id="category-bar"></div>
+
+  <div class="layout">
+    <section class="panel jobs-panel">
+      <div class="panel-head">
+        <h2>Jobs</h2>
+        <div class="panel-tools">
+          <div class="search-box">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4.3" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <input type="text" id="job-search" placeholder="Suchen …  ( / )">
+          </div>
+          <select id="job-sort">
+            <option value="name">Name</option>
+            <option value="recent">Zuletzt ausgeführt</option>
+            <option value="status">Status</option>
+            <option value="manual">Eigene Reihenfolge</option>
+          </select>
+          <button class="btn" id="btn-toggle-select" title="Mehrere Jobs gleichzeitig bearbeiten">Auswählen</button>
+          <button class="btn hidden" id="btn-archiv-zurueck" title="Zurück zu den aktiven Jobs">← Zurück zu den Jobs</button>
+          <div class="overflow-wrap">
+            <button class="btn-icon" id="btn-view-menu" title="Ansicht" aria-label="Ansichtsoptionen">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="13" cy="8" r="1.3" fill="currentColor"/></svg>
+            </button>
+            <div class="overflow-menu hidden" id="view-menu">
+              <button class="menu-item" id="btn-toggle-grouping"><span class="check">✓</span>Nach Kategorie gruppieren</button>
+              <button class="menu-item" id="btn-toggle-density"><span class="check">✓</span>Kompakte Ansicht</button>
+              <div class="menu-sep"></div>
+              <button class="menu-item" id="btn-manage-categories">Kategorien verwalten …</button>
+              <button class="menu-item" id="btn-show-audit">Änderungsprotokoll …</button>
+              <div class="menu-sep"></div>
+              <button class="menu-item" id="btn-toggle-archive"><span class="check">✓</span>Archiv anzeigen</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bulk-bar hidden" id="bulk-bar">
+        <span class="bulk-count" id="bulk-count">0 ausgewählt</span>
+        <button class="btn" data-bulk="activate">Aktivieren</button>
+        <button class="btn" data-bulk="pause">Pausieren</button>
+        <button class="btn" data-bulk="setCategory">Kategorie …</button>
+        <button class="btn btn-ghost" data-bulk="delete">Löschen</button>
+        <button class="btn btn-ghost" id="bulk-clear">Auswahl aufheben</button>
+      </div>
+      <div id="jobs-list" class="jobs-list"></div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <h2>Übertragungsprotokoll</h2>
+        <div class="panel-tools">
+          <div class="search-box">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4.3" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <input type="text" id="log-search" placeholder="Datei, Auftrag, Meldung …" autocomplete="off">
+          </div>
+          <select id="filter-job"><option value="">Alle Jobs</option></select>
+          <select id="filter-status">
+            <option value="">Alle Status</option>
+            <option value="success">Nur Erfolg</option>
+            <option value="error">Nur Fehler</option>
+          </select>
+          <button class="btn" id="btn-export-logs" title="Sichtbare Einträge als CSV exportieren">CSV</button>
+        </div>
+      </div>
+      <div id="log-stream" class="log-stream"></div>
+    </section>
+
+    <section class="panel detail-column" id="detail-column">
+      <div class="panel-head">
+        <h2 id="detail-column-title">Job-Details</h2>
+        <button class="btn-icon" id="detail-column-close" aria-label="Details schließen">&times;</button>
+      </div>
+      <div class="drawer-body" id="detail-column-body">
+        <div class="empty-state"><p>Job in der Liste anklicken, um Details zu sehen.</p></div>
+      </div>
+    </section>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-statistik">
+  <div class="stats-toolbar">
+    <p class="stats-toolbar-hint">Zeitraum</p>
+    <div class="stats-range-pills" id="stats-range-pills">
+      <button type="button" class="category-pill" data-range="7">7 Tage</button>
+      <button type="button" class="category-pill active" data-range="14">14 Tage</button>
+      <button type="button" class="category-pill" data-range="30">30 Tage</button>
+      <button type="button" class="category-pill" data-range="90">90 Tage</button>
+    </div>
+    <button class="btn" id="btn-export-stats" title="Aufschlüsselung nach Schnittstelle als CSV exportieren">CSV exportieren</button>
+    <button class="btn btn-ghost" id="btn-reset-stats" title="Protokoll und Statistik vollständig löschen">Protokoll zurücksetzen</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <span class="kpi-value" id="kpi-transfers">0</span>
+      <span class="kpi-trend" id="kpi-transfers-trend"></span>
+      <span class="kpi-label">Übertragungen</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-value" id="kpi-volume">0 B</span>
+      <span class="kpi-trend" id="kpi-volume-trend"></span>
+      <span class="kpi-label">Datenvolumen</span>
+    </div>
+    <div class="kpi-card ok">
+      <span class="kpi-value" id="kpi-rate">–</span>
+      <span class="kpi-trend" id="kpi-rate-trend"></span>
+      <span class="kpi-label">Erfolgsquote</span>
+    </div>
+    <div class="kpi-card err">
+      <span class="kpi-value" id="kpi-errors">0</span>
+      <span class="kpi-trend" id="kpi-errors-trend"></span>
+      <span class="kpi-label">Fehler</span>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <section class="panel chart-panel">
+      <div class="panel-head"><h2>Übertragungen pro Tag</h2></div>
+      <div id="chart-timeline" class="chart-body"></div>
+    </section>
+    <section class="panel chart-panel">
+      <div class="panel-head"><h2>Übertragungen pro Job</h2></div>
+      <div id="chart-perjob" class="chart-body"></div>
+    </section>
+  </div>
+
+  <div class="chart-grid">
+    <section class="panel chart-panel">
+      <div class="panel-head"><h2>Übertragungen pro Kategorie</h2></div>
+      <div id="chart-percategory" class="chart-body"></div>
+    </section>
+    <section class="panel chart-panel">
+      <div class="panel-head"><h2>Datenvolumen pro Kategorie</h2></div>
+      <div id="chart-catvolume" class="chart-body"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Aufschlüsselung nach Schnittstelle</h2></div>
+    <div id="target-table" class="target-table"></div>
+  </section>
+</section>
+
+</main>
+
+<!-- Job-Detailansicht -->
+<div class="drawer-backdrop" id="drawer-backdrop">
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div>
+        <p class="drawer-eyebrow">Job-Details</p>
+        <h2 id="drawer-title">–</h2>
+      </div>
+      <button class="btn-icon" id="drawer-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-section" id="drawer-meta"></div>
+      <div class="drawer-section">
+        <p class="drawer-section-title">Aktivität (letzte Läufe)</p>
+        <div id="drawer-pulse" class="pulse-strip pulse-strip-lg"></div>
+      </div>
+      <div class="drawer-section">
+        <p class="drawer-section-title">Verlauf</p>
+        <div id="drawer-log" class="log-stream"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Job-Formular -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="modal-title">Neuer Job</h2>
+      <button class="btn-icon" id="modal-close" aria-label="Schließen">&times;</button>
+    </div>
+    <form id="job-form" class="job-form">
+      <input type="hidden" id="f-id">
+
+      <div class="template-row" id="template-row">
+        <select id="template-select">
+          <option value="">Vorlage anwenden …</option>
+        </select>
+        <button type="button" class="btn" id="btn-save-template">Als Vorlage speichern</button>
+      </div>
+
+      <div class="grid-2">
+        <label>Name
+          <input type="text" id="f-name" placeholder="z. B. Bestellungen → Partner-API" required>
+        </label>
+        <label>Kategorie
+          <input type="text" id="f-category" list="category-suggestions" placeholder="z. B. Buchhaltung">
+          <datalist id="category-suggestions"></datalist>
+        </label>
+      </div>
+
+      <label>Quell-Ordner (UNC-Pfad)
+        <input type="text" id="f-sourcePath" placeholder="\\SERVER\Freigabe\Ordner" required>
+      </label>
+
+      <div class="grid-2">
+        <label>Dateifilter
+          <input type="text" id="f-filePattern" placeholder="*.xml" value="*">
+        </label>
+        <label>Scan-Intervall (Sek.)
+          <input type="number" id="f-pollIntervalSec" min="5" value="30">
+        </label>
+      </div>
+
+      <details class="form-section" id="sec-dateiauswahl">
+      <summary>Dateiauswahl verfeinern <span class="sec-hint">Ruhezeit, Größenlimit, Vorschau</span></summary>
+      <div class="grid-2">
+        <label>Mindestalter der Datei (Sek.)
+          <input type="number" id="f-minFileAgeSec" min="0" value="0">
+          <span class="field-hint">0 = sofort senden. Höher setzen, wenn andere Programme in den Ordner schreiben — die Datei wird erst gesendet, wenn sie so lange unverändert ist.</span>
+        </label>
+        <label>Max. Dateigröße (MB)
+          <input type="number" id="f-maxFileSizeMB" min="0" step="0.1" value="0">
+          <span class="field-hint">0 = kein Limit. Größere Dateien werden übersprungen und einmalig im Protokoll vermerkt.</span>
+        </label>
+      </div>
+
+      <div class="preview-row">
+        <button type="button" class="btn" id="btn-preview-files">Passende Dateien anzeigen</button>
+        <span id="preview-result"></span>
+      </div>
+      <div id="preview-list" class="preview-list hidden"></div>
+
+      </details>
+
+      <label>Verarbeitung vor dem Senden
+        <select id="f-processor">
+          <option value="none">Keine — Datei unverändert senden</option>
+          <option value="pdf-qr-json">PDF mit QR-Code → JSON umwandeln</option>
+        </select>
+      </label>
+
+      <div class="option-block" id="wrap-stapel">
+        <label class="option-row">
+          <input type="checkbox" id="f-stapelTeilen">
+          <span><strong>Stapelscan an QR-Codes aufteilen</strong> — enthält eine PDF-Datei mehrere Dokumente
+            hintereinander, werden sie getrennt und einzeln gesendet. Jede Seite mit Code beginnt ein neues
+            Dokument, Seiten ohne Code gehören zum vorherigen.
+            <span style="display:block;color:var(--text-faint);margin-top:3px">
+              Wirkt unabhängig von der Umwandlung: ohne Umwandlung werden die Teildokumente als einzelne
+              PDF-Dateien gesendet.
+            </span>
+          </span>
+        </label>
+        <label class="option-row hidden" id="wrap-vorspann">
+          <input type="checkbox" id="f-vorspannVerwerfen">
+          <span>Seiten vor dem ersten QR-Code verwerfen <span style="color:var(--text-faint)">(z. B. Deckblätter)</span></span>
+        </label>
+
+        <div class="hidden" id="wrap-namensmuster" style="margin-top:12px">
+          <label>Dateiname der Teildokumente
+            <input type="text" id="f-teilNamensmuster" placeholder="{stamm}_{nr}_{qrWert}" spellcheck="false">
+            <span class="field-hint">
+              Platzhalter: <code>{stamm}</code> ursprünglicher Dateiname ·
+              <code>{qrWert}</code> erkannter Code · <code>{nr}</code> laufende Nummer (01, 02 …) ·
+              <code>{anzahl}</code> Anzahl der Teile · <code>{seiten}</code> Seiten im Teil ·
+              <code>{datum}</code> · <code>{zeit}</code>.
+              Die Endung <code>.pdf</code> wird angehängt, falls sie fehlt. Fehlt der QR-Wert,
+              entfallen die zugehörigen Trennzeichen. Für einen Namen ganz ohne Unterstrich
+              genügt <code>{qrWert}</code>.
+            </span>
+          </label>
+          <div class="preview-row" style="margin-top:8px">
+            <button type="button" class="btn" id="btn-namen-vorschau">Beispielnamen anzeigen</button>
+            <span id="namen-vorschau"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hidden" id="wrap-processor-fields">
+        <div class="option-block" style="margin-bottom:13px">
+          <p style="margin:0;font-size:12.5px;color:var(--text-dim);line-height:1.5">
+            Das eingescannte PDF wird gerendert, der QR-Code ausgelesen und als JSON gesendet:
+            <code style="font-size:11px;color:var(--text)">{ probennummer, qrGefunden, dateiname, groesseBytes, erfasstAm, dateiInhaltBase64 }</code>.
+            Ist kein QR-Code lesbar, wird trotzdem gesendet — mit <code style="font-size:11px;color:var(--text)">qrGefunden: false</code>,
+            damit die Gegenstelle den Fall zur Klärung ausleiten kann.
+          </p>
+        </div>
+        <div class="grid-2">
+          <label>QR-Code auf Seite
+            <input type="number" id="f-qrSeite" min="1" value="1">
+          </label>
+          <label>Render-Auflösung (dpi)
+            <input type="number" id="f-qrDpi" min="72" max="600" step="1" value="200">
+            <span class="field-hint">200 dpi reicht meist. Bei schlecht lesbaren Scans 300 versuchen.</span>
+          </label>
+        </div>
+
+        <label style="margin-top:13px">Sendeformat
+          <select id="f-sendeFormat">
+            <option value="json">JSON-Rumpf mit eingebettetem PDF (Base64)</option>
+            <option value="multipart-metadata">multipart/form-data — PDF + Metadatenfeld</option>
+          </select>
+        </label>
+
+        <div class="hidden" id="wrap-multipart-fields" style="margin-top:13px">
+          <div class="grid-2">
+            <label>Feldname der Datei
+              <input type="text" id="f-dateiFeldName" value="file1">
+            </label>
+            <label>Feldname der Metadaten
+              <input type="text" id="f-metadataFeldName" value="metadata1">
+            </label>
+          </div>
+
+          <label style="margin-top:13px">Metadaten-Vorlage (JSON)
+            <textarea id="f-metadataVorlage" rows="6" spellcheck="false"></textarea>
+            <span class="field-hint">
+              <strong>{qrWert}</strong> = Inhalt des QR-Codes. Weiter:
+              <code>{qrGefunden}</code> <code>{dateiname}</code> <code>{dateinameOhneEndung}</code>
+              <code>{unixzeit}</code> <code>{isozeit}</code> <code>{groesseBytes}</code>
+              <code>{jobName}</code> <code>{festwert}</code>.
+              Steht ein Platzhalter in Anführungszeichen und der Wert ist eine Zahl, wird er als Zahl ausgegeben
+              (<code>"{qrWert}"</code> → <code>1234</code>).
+            </span>
+          </label>
+
+          <div class="grid-2" style="margin-top:13px">
+            <label>Fester Zusatzwert (optional)
+              <input type="text" id="f-auftragsnummer" placeholder="z. B. Mandant oder Standort">
+              <span class="field-hint">Füllt <code>{festwert}</code> — für Werte, die für alle Dateien dieses Jobs gleich sind.</span>
+            </label>
+            <label>Aus Dateiname auslesen (regulärer Ausdruck)
+              <input type="text" id="f-dateinameRegex" placeholder="^(?&lt;auftrag&gt;\d+)_(?&lt;lfd&gt;\d+)" spellcheck="false">
+              <span class="field-hint">Benannte Gruppen werden zu <code>{gruppe:name}</code>. Beispiel für <code>1234_001.pdf</code>: ergibt <code>{gruppe:auftrag}</code> = 1234 und <code>{gruppe:lfd}</code> = 001.</span>
+            </label>
+          </div>
+
+          <div class="preview-row" style="margin-top:13px">
+            <button type="button" class="btn" id="btn-preview-metadata">Vorschau der Metadaten</button>
+            <span id="metadata-preview-result"></span>
+          </div>
+          <pre id="metadata-preview" class="preview-list hidden" style="white-space:pre-wrap"></pre>
+        </div>
+      </div>
+
+      <label>Zielart
+        <select id="f-zielTyp">
+          <option value="http">HTTP-Schnittstelle (curl)</option>
+          <option value="ordner">Netzwerk- oder lokaler Ordner</option>
+          <option value="email">E-Mail-Anhang</option>
+        </select>
+      </label>
+
+      <div id="wrap-ziel-http">
+        <label>Ziel-URL
+          <input type="text" id="f-targetUrl" placeholder="https://schnittstelle.example.com/upload">
+        </label>
+      </div>
+
+      <div id="wrap-ziel-ordner" class="hidden">
+        <label>Zielordner
+          <input type="text" id="f-zielOrdner" placeholder="\\SERVER\Eingang\Ordner">
+          <span class="field-hint">Die Datei wird zuerst unter Zwischennamen geschrieben und erst danach umbenannt — die Gegenstelle sieht nie eine halb geschriebene Datei.</span>
+        </label>
+        <label class="option-row" style="margin-top:10px">
+          <input type="checkbox" id="f-ordnerUeberschreiben">
+          <span>Vorhandene Dateien überschreiben <span style="color:var(--text-faint)">(sonst wird durchnummeriert)</span></span>
+        </label>
+      </div>
+
+      <div id="wrap-ziel-email" class="hidden">
+        <div class="grid-2">
+          <label>SMTP-Server
+            <input type="text" id="f-smtpHost" placeholder="smtp.example.org">
+          </label>
+          <label>Port
+            <input type="number" id="f-smtpPort" value="587">
+            <span class="field-hint">587 mit STARTTLS, 465 direkt verschlüsselt, 25 unverschlüsselt</span>
+          </label>
+        </div>
+        <div class="grid-2" style="margin-top:10px">
+          <label>Benutzer (optional)
+            <input type="text" id="f-smtpBenutzer" autocomplete="off">
+          </label>
+          <label>Passwort
+            <input type="password" id="f-smtpPasswort" autocomplete="new-password">
+          </label>
+        </div>
+        <div class="grid-2" style="margin-top:10px">
+          <label>Absender
+            <input type="text" id="f-mailVon" placeholder="folderpost@example.org">
+          </label>
+          <label>Empfänger
+            <input type="text" id="f-mailAn" placeholder="inbox@example.com">
+            <span class="field-hint">Mehrere durch Komma trennen</span>
+          </label>
+        </div>
+        <label style="margin-top:10px">Betreff
+          <input type="text" id="f-mailBetreff" value="Neue Datei: {dateiname}">
+          <span class="field-hint">Platzhalter: <code>{dateiname}</code> <code>{jobname}</code></span>
+        </label>
+        <label class="option-row" style="margin-top:10px">
+          <input type="checkbox" id="f-smtpSicher" checked>
+          <span>Verschlüsselt senden (STARTTLS)</span>
+        </label>
+      </div>
+
+      <details class="form-section" id="sec-extras">
+      <summary>Weitere Ziele &amp; Notiz <span class="sec-hint">optional</span></summary>
+      <label>Zusätzliche Ziele (eine URL pro Zeile, optional)
+        <textarea id="f-extraTargetUrls" rows="2" placeholder="https://zweite-schnittstelle.example.com/upload"></textarea>
+        <span class="field-hint">Dieselbe Datei geht zusätzlich an diese Ziele. Der Job gilt nur als erfolgreich, wenn alle Ziele erfolgreich waren.</span>
+      </label>
+
+      <label>Notiz (optional)
+        <textarea id="f-notes" rows="2" placeholder="z. B. Ansprechpartner, Ticketnummer, geplante Umstellung"></textarea>
+        <span class="field-hint">Interner Vermerk zum Job — erscheint in der Detailansicht.</span>
+      </label>
+
+      </details>
+
+      <div class="option-block">
+        <label class="option-row">
+          <input type="checkbox" id="f-dryRun">
+          <span><strong>Testmodus</strong> — nichts wirklich senden, nur protokollieren, was passiert wäre. Dateien bleiben liegen.</span>
+        </label>
+        <label class="option-row">
+          <input type="checkbox" id="f-dedupe">
+          <span><strong>Duplikate abweisen</strong> — inhaltsgleiche Dateien werden nicht erneut übertragen (Prüfsumme).</span>
+        </label>
+      </div>
+
+      <details class="form-section" id="sec-uebertragung">
+      <summary>Übertragungsdetails <span class="sec-hint">Methode, Header, Anmeldung, curl-Parameter</span></summary>
+      <div class="grid-2">
+        <label>HTTP-Methode
+          <select id="f-method">
+            <option>POST</option><option>PUT</option><option>PATCH</option>
+          </select>
+        </label>
+        <label>Übertragungsart
+          <select id="f-uploadMode">
+            <option value="binary">Rohdaten (--data-binary)</option>
+            <option value="multipart">Multipart-Formular (-F)</option>
+          </select>
+        </label>
+      </div>
+
+      <label id="wrap-multipartField" class="hidden">Formularfeld-Name
+        <input type="text" id="f-multipartField" placeholder="file" value="file">
+      </label>
+
+      <label>HTTP-Header (eine pro Zeile)
+        <textarea id="f-headers" rows="2" placeholder="Content-Type: application/xml&#10;Authorization: Bearer ..."></textarea>
+      </label>
+
+      <label>Authentifizierung
+        <select id="f-authType">
+          <option value="none">Keine</option>
+          <option value="basic">Basic-Auth (Benutzername/Passwort)</option>
+        </select>
+      </label>
+
+      <div class="grid-2 hidden" id="wrap-auth-fields">
+        <label>Benutzername
+          <input type="text" id="f-authUser" autocomplete="off" placeholder="benutzer">
+        </label>
+        <label>Passwort
+          <span class="password-field">
+            <input type="password" id="f-authPassword" autocomplete="new-password" placeholder="wird gesetzt">
+            <button type="button" class="btn-icon" id="btn-toggle-password" aria-label="Passwort anzeigen">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.3"/></svg>
+            </button>
+          </span>
+          <span class="field-hint" id="hint-password-set">Passwort ist gesetzt — leer lassen, um es beizubehalten</span>
+        </label>
+      </div>
+
+      <label>Zusätzliche curl-Parameter (einer pro Zeile)
+        <textarea id="f-curlExtraArgs" rows="2" placeholder="-k&#10;--proxy http://proxy:8080"></textarea>
+      </label>
+
+      <div class="test-connection-row">
+        <button type="button" class="btn" id="btn-test-connection">Verbindung testen</button>
+        <span id="test-connection-result"></span>
+      </div>
+
+      </details>
+
+      <details class="form-section" id="sec-nachher">
+      <summary>Nach dem Senden <span class="sec-hint">Archivieren, Fehlerordner, Aufräumen</span></summary>
+      <div class="grid-2">
+        <label>Bei Erfolg
+          <select id="f-onSuccess">
+            <option value="archive">In Unterordner verschieben</option>
+            <option value="keep">Datei belassen</option>
+          </select>
+        </label>
+        <label>Archiv-Unterordner
+          <input type="text" id="f-archiveSubfolder" value="_gesendet">
+        </label>
+      </div>
+
+      <div class="grid-2" style="margin-top:13px">
+        <label>Versuche je Datei
+          <input type="number" id="f-maxVersuche" min="0" value="5">
+          <span class="field-hint">0 = unbegrenzt weiterversuchen. Sonst wandert die Datei nach dieser Anzahl in die Quarantäne.</span>
+        </label>
+        <label>Wartezeit nach Fehlschlag (Sek.)
+          <input type="number" id="f-wartezeitBasisSec" min="1" value="60">
+          <span class="field-hint">Verdoppelt sich mit jedem Versuch, höchstens eine Stunde.</span>
+        </label>
+      </div>
+      <label style="margin-top:13px">Quarantäne-Unterordner
+        <input type="text" id="f-quarantaeneSubfolder" value="_quarantaene">
+      </label>
+
+      <label style="margin-top:13px">Archiv aufräumen nach (Tagen)
+        <input type="number" id="f-archiveRetentionDays" min="0" value="0">
+        <span class="field-hint">0 = nie aufräumen. Andernfalls werden Dateien im Archiv-Unterordner nach dieser Zeit automatisch gelöscht.</span>
+      </label>
+
+      <div class="grid-2">
+        <label>Bei Fehler
+          <select id="f-onError">
+            <option value="keep">Datei belassen (erneuter Versuch)</option>
+            <option value="archive">In Fehler-Unterordner verschieben</option>
+          </select>
+        </label>
+        <label>Fehler-Unterordner
+          <input type="text" id="f-errorSubfolder" value="_fehler">
+        </label>
+      </div>
+
+      </details>
+
+      <details class="form-section" id="sec-zeitfenster">
+      <summary>Zeitfenster <span class="sec-hint">nur an bestimmten Tagen/Uhrzeiten laufen</span></summary>
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="f-scheduleEnabled" style="width:auto">
+        Zeitfenster einschränken (statt rund um die Uhr)
+      </label>
+
+      <div class="hidden" id="wrap-schedule-fields">
+        <div class="weekday-picker" id="weekday-picker">
+          <label><input type="checkbox" value="MO" checked>Mo</label>
+          <label><input type="checkbox" value="TU" checked>Di</label>
+          <label><input type="checkbox" value="WE" checked>Mi</label>
+          <label><input type="checkbox" value="TH" checked>Do</label>
+          <label><input type="checkbox" value="FR" checked>Fr</label>
+          <label><input type="checkbox" value="SA" checked>Sa</label>
+          <label><input type="checkbox" value="SU" checked>So</label>
+        </div>
+        <div class="grid-2" style="margin-top:10px">
+          <label>Von
+            <input type="time" id="f-timeStart" value="00:00">
+          </label>
+          <label>Bis
+            <input type="time" id="f-timeEnd" value="23:59">
+          </label>
+        </div>
+      </div>
+
+      </details>
+
+      <div class="probelauf-block">
+        <div class="preview-row">
+          <button type="button" class="btn" id="btn-probelauf">▶ Probelauf mit echter Datei</button>
+          <span id="probelauf-status"></span>
+        </div>
+        <p class="field-hint" style="margin-top:6px">
+          Nimmt die erste passende Datei aus dem Quell-Ordner und zeigt, was gesendet würde —
+          ohne zu speichern und ohne zu senden.
+        </p>
+        <div id="probelauf-ergebnis" class="hidden"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btn-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Bestätigungsdialog -->
+<div class="modal-backdrop" id="confirm-backdrop">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h2 id="confirm-title">Wirklich löschen?</h2>
+    </div>
+    <div class="confirm-body">
+      <p id="confirm-text"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="confirm-cancel">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="confirm-ok">Löschen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Export / Import -->
+<div class="modal-backdrop" id="palette-backdrop">
+  <div class="modal modal-sm palette-modal">
+    <div class="palette-input-row">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><circle cx="8.7" cy="8.7" r="5.2" stroke="currentColor" stroke-width="1.5"/><path d="M16 16l-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input type="text" id="palette-input" placeholder="Job suchen oder Aktion ausführen …" autocomplete="off">
+      <span class="palette-esc">Esc</span>
+    </div>
+    <div id="palette-list" class="palette-list"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="transfer-backdrop">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h2>Konfiguration exportieren / importieren</h2>
+      <button class="btn-icon" id="transfer-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="confirm-body">
+      <p class="drawer-section-title" style="margin-bottom:8px">Export</p>
+      <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 12px">
+        Sichert alle Jobs (inkl. Zugangsdaten) als JSON-Datei — z. B. vor einem Update, um den
+        aktuellen Stand danach wieder einzuspielen.
+      </p>
+      <button type="button" class="btn btn-primary" id="btn-do-export" style="margin-bottom:20px">Jetzt exportieren</button>
+
+      <p class="drawer-section-title" style="margin-bottom:8px">Import</p>
+      <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+        Zuvor exportierte JSON-Datei auswählen. Jobs mit übereinstimmender ID werden aktualisiert,
+        neue Jobs werden ergänzt.
+      </p>
+      <input type="file" id="import-file-input" accept="application/json,.json" style="margin-bottom:10px;font-size:12.5px;color:var(--text-dim)">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-dim);margin-bottom:14px;cursor:pointer">
+        <input type="checkbox" id="import-replace-checkbox">
+        Vor dem Import alle bestehenden Jobs löschen (vollständig ersetzen)
+      </label>
+      <div id="import-result" style="font-size:12.5px;margin-bottom:10px"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="transfer-close-2">Schließen</button>
+        <button type="button" class="btn btn-primary" id="btn-do-import">Importieren</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Einstellungen -->
+<div class="modal-backdrop" id="settings-backdrop">
+  <div class="modal modal-settings">
+    <div class="settings-sticky-kopf">
+      <div class="modal-head">
+        <h2>Einstellungen</h2>
+        <button class="btn-icon" id="settings-close" aria-label="Schließen">&times;</button>
+      </div>
+      <div class="settings-tabs" id="settings-tabs">
+        <button type="button" class="settings-tab active" data-spanel="allg">Allgemein</button>
+        <button type="button" class="settings-tab" data-spanel="zugriff">Benutzer &amp; Zugriff</button>
+        <button type="button" class="settings-tab" data-spanel="benachr">Benachrichtigungen</button>
+        <button type="button" class="settings-tab" data-spanel="system">System &amp; Wartung</button>
+      </div>
+    </div>
+    <div class="confirm-body">
+
+      <div class="settings-panel active" data-spanel="allg">
+              <p class="drawer-section-title" style="margin-bottom:8px">Erscheinungsbild</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Logo, Farbe und Name erscheinen in der Kopfzeile und auf dem Anmeldebildschirm.
+              </p>
+              <div class="marken-vorschau" id="marken-vorschau">
+                <span class="marken-logo" id="marken-logo"></span>
+                <div>
+                  <strong id="marken-name">Folderpost</strong>
+                  <span id="marken-sub">Vorschau</span>
+                </div>
+              </div>
+              <div class="grid-2" style="margin-top:12px">
+                <label>Anzeigename
+                  <input type="text" id="marke-name-eingabe" placeholder="leer = Folderpost">
+                </label>
+                <label>Akzentfarbe
+                  <span class="farb-zeile">
+                    <input type="color" id="marke-farbe" value="#D0764C">
+                    <input type="text" id="marke-farbe-hex" placeholder="#D0764C" spellcheck="false">
+                  </span>
+                </label>
+              </div>
+              <label style="margin-top:12px">Logo
+                <input type="file" id="marke-logo-datei" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                <span class="field-hint">PNG, JPEG, SVG oder WebP bis etwa 300 KB. Wird in der Konfiguration gespeichert.</span>
+              </label>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                <button type="button" class="btn btn-primary" id="btn-marke-speichern">Übernehmen</button>
+                <button type="button" class="btn btn-ghost" id="btn-marke-zuruecksetzen">Zurücksetzen</button>
+              </div>
+              <div id="marke-ergebnis" style="font-size:12.5px;margin-top:8px"></div>
+
+              <p class="drawer-section-title" style="margin-bottom:8px">Protokoll-Aufbewahrung</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Einträge, die älter als diese Anzahl Tage sind, werden automatisch entfernt
+                (Prüfung erfolgt periodisch im Hintergrund).
+              </p>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <input type="number" id="settings-retention-days" min="1" style="width:90px" value="90">
+                <span style="font-size:12.5px;color:var(--text-dim)">Tage</span>
+                <button type="button" class="btn" id="btn-save-retention">Speichern</button>
+              </div>
+              <div id="settings-result" style="font-size:12.5px;margin-top:4px"></div>
+      </div>
+
+      <div class="settings-panel" data-spanel="zugriff">
+              <p class="drawer-section-title" style="margin-bottom:8px">Benutzer &amp; Anmeldung</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Solange kein Benutzer angelegt ist, ist die Anwendung ohne Anmeldung erreichbar.
+                Sobald der erste Benutzer existiert, wird eine Anmeldung verlangt und jede Änderung
+                im Änderungsprotokoll dem Benutzer zugeordnet.
+              </p>
+              <div id="benutzer-liste" class="benutzer-liste"></div>
+
+              <div class="grid-2" style="margin-top:12px">
+                <label style="font-size:12.5px;color:var(--text-dim)">Benutzername
+                  <input type="text" id="neu-benutzer-name" autocomplete="off" placeholder="z. B. jdoe">
+                </label>
+                <label style="font-size:12.5px;color:var(--text-dim)">Anzeigename
+                  <input type="text" id="neu-benutzer-anzeige" autocomplete="off" placeholder="z. B. J. Doe">
+                </label>
+              </div>
+              <div class="grid-2" style="margin-top:10px">
+                <label style="font-size:12.5px;color:var(--text-dim)">Passwort
+                  <input type="password" id="neu-benutzer-passwort" autocomplete="new-password">
+                </label>
+                <label style="font-size:12.5px;color:var(--text-dim)">Rolle
+                  <select id="neu-benutzer-rolle">
+                    <option value="betrachter">Betrachter — darf nur ansehen</option>
+                    <option value="benutzer" selected>Benutzer — darf Jobs bearbeiten</option>
+                    <option value="verwaltung">Verwaltung — darf alles</option>
+                  </select>
+                </label>
+              </div>
+              <button type="button" class="btn btn-primary" id="btn-benutzer-anlegen" style="margin-top:10px">Benutzer anlegen</button>
+              <div id="benutzer-ergebnis" style="font-size:12.5px;margin-top:8px"></div>
+
+              <p class="drawer-section-title" style="margin:22px 0 8px">Anmeldebildschirm</p>
+              <label class="option-row" style="margin-bottom:6px">
+                <input type="checkbox" id="einst-joboverview">
+                <span>Job-Übersicht schon vor der Anmeldung zeigen
+                  <span style="display:block;color:var(--text-faint);font-size:11.5px;margin-top:2px">
+                    Praktisch für einen Blick auf den Betrieb, macht aber Jobnamen und Fehlerzustände
+                    ohne Anmeldung sichtbar.
+                  </span>
+                </span>
+              </label>
+              <button type="button" class="btn" id="btn-save-joboverview" style="margin-bottom:4px">Übernehmen</button>
+      </div>
+
+      <div class="settings-panel" data-spanel="benachr">
+              <p class="drawer-section-title" style="margin:22px 0 8px">Benachrichtigungen</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Wird eine Datei nach mehreren Fehlversuchen in die Quarantäne verschoben, kann die
+                Anwendung das von sich aus melden — per E-Mail, per Webhook oder beides. Um wiederholte
+                Meldungen für denselben Job zu vermeiden, wird je Job höchstens alle 15 Minuten benachrichtigt.
+              </p>
+
+              <label class="option-row">
+                <input type="checkbox" id="benachr-email-aktiv">
+                <span>Per E-Mail benachrichtigen</span>
+              </label>
+              <div id="wrap-benachr-email" class="hidden" style="margin-top:10px">
+                <div class="grid-2">
+                  <label>SMTP-Server
+                    <input type="text" id="benachr-smtpHost" placeholder="smtp.example.org">
+                  </label>
+                  <label>Port
+                    <input type="number" id="benachr-smtpPort" value="587">
+                  </label>
+                </div>
+                <div class="grid-2" style="margin-top:10px">
+                  <label>Benutzer (optional)
+                    <input type="text" id="benachr-smtpBenutzer" autocomplete="off">
+                  </label>
+                  <label>Passwort
+                    <input type="password" id="benachr-smtpPasswort" autocomplete="new-password">
+                  </label>
+                </div>
+                <div class="grid-2" style="margin-top:10px">
+                  <label>Absender
+                    <input type="text" id="benachr-von" placeholder="folderpost@example.org">
+                  </label>
+                  <label>Empfänger
+                    <input type="text" id="benachr-an" placeholder="admin@example.org">
+                    <span class="field-hint">Mehrere durch Komma trennen</span>
+                  </label>
+                </div>
+                <label class="option-row" style="margin-top:10px">
+                  <input type="checkbox" id="benachr-smtpSicher" checked>
+                  <span>Verschlüsselt senden (STARTTLS)</span>
+                </label>
+              </div>
+
+              <label class="option-row" style="margin-top:14px">
+                <input type="checkbox" id="benachr-webhook-aktiv">
+                <span>Per Webhook benachrichtigen</span>
+              </label>
+              <div id="wrap-benachr-webhook" class="hidden" style="margin-top:10px">
+                <label>Webhook-URL
+                  <input type="text" id="benachr-webhook-url" placeholder="https://…/webhook">
+                  <span class="field-hint">Erhält einen POST mit JSON-Rumpf: Job, Datei, Meldung, Zeitpunkt.</span>
+                </label>
+              </div>
+
+              <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+                <button type="button" class="btn" id="btn-save-benachrichtigung">Speichern</button>
+                <button type="button" class="btn" id="btn-test-benachrichtigung">Test senden</button>
+              </div>
+              <div id="benachrichtigung-ergebnis" style="font-size:12.5px;margin-top:6px"></div>
+      </div>
+
+      <div class="settings-panel" data-spanel="system">
+              <p class="drawer-section-title" style="margin:22px 0 8px">Aktualisierungen</p>
+              <div id="update-stand" class="update-stand"></div>
+              <label style="font-size:12.5px;color:var(--text-dim);margin-top:10px">Prüf-Adresse (optional)
+                <input type="text" id="update-url" placeholder="https://…/version.json" spellcheck="false">
+                <span class="field-hint">Erwartet eine Datei im Format <code>{"version":"1.5.0","hinweis":"…","download":"https://…"}</code></span>
+              </label>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button type="button" class="btn" id="btn-update-url">Adresse speichern</button>
+                <button type="button" class="btn btn-primary" id="btn-update-pruefen">Jetzt prüfen</button>
+              </div>
+              <div id="update-ergebnis" style="font-size:12.5px;margin-top:8px"></div>
+
+              <div class="update-einspielen">
+                <p class="drawer-section-title" style="margin:0 0 6px">Verhalten nach dem Einspielen</p>
+                <div id="betriebsart-hinweis" class="betriebsart-hinweis hidden"></div>
+                <label>Wie soll die Anwendung neu starten?
+                  <select id="neustart-verhalten">
+                    <option value="selbst">Selbst neu starten — passend für start.bat</option>
+                    <option value="beenden">Nur beenden — passend für Aufgabenplanung oder Dienst</option>
+                  </select>
+                  <span class="field-hint">
+                    Läuft die Anwendung als geplante Aufgabe oder als Dienst, darf sie sich nicht selbst
+                    neu starten: Windows würde den neuen Vorgang nicht kennen und könnte einen zweiten
+                    danebenstarten. Dann besser „nur beenden" wählen und in der Aufgabe
+                    „Aufgabe neu starten, falls sie fehlschlägt" aktivieren.
+                  </span>
+                </label>
+                <button type="button" class="btn" id="btn-neustart-verhalten" style="margin-top:8px">Übernehmen</button>
+                <div id="neustart-ergebnis" style="font-size:12.5px;margin-top:8px"></div>
+
+                <p class="drawer-section-title" style="margin:18px 0 6px">Paket einspielen</p>
+                <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                  Neues Paket als ZIP hochladen. Konfiguration, Protokolle und Benutzer
+                  bleiben erhalten; vom bisherigen Stand wird zuvor eine Sicherung angelegt.
+                  Anschließend startet die Anwendung neu.
+                </p>
+                <label>Paket auswählen
+                  <input type="file" id="update-datei" accept=".zip,application/zip">
+                </label>
+                <button type="button" class="btn btn-primary" id="btn-update-einspielen" style="margin-top:10px" disabled>
+                  Einspielen und neu starten
+                </button>
+                <div id="update-fortschritt" class="update-fortschritt hidden">
+                  <div class="update-balken"><span></span></div>
+                  <span id="update-fortschritt-text"></span>
+                </div>
+                <div id="update-einspiel-ergebnis" style="font-size:12.5px;margin-top:8px"></div>
+              </div>
+
+              <p class="drawer-section-title" style="margin:22px 0 8px">PDF-Verarbeitung (Werkzeuge)</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Nur nötig für Jobs, die eingescannte PDFs mit QR-Code auswerten.
+              </p>
+              <button type="button" class="btn" id="btn-check-tools" style="margin-bottom:10px">Jetzt prüfen</button>
+              <div id="tools-result" class="tools-result"></div>
+
+              <p class="drawer-section-title" style="margin:22px 0 8px">Konfigurations-Sicherungen</p>
+              <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 10px">
+                Vor jeder Änderung wird automatisch eine Kopie angelegt (die letzten 10).
+                Beim Wiederherstellen wird der aktuelle Stand zuvor ebenfalls gesichert.
+              </p>
+              <div id="backup-list" class="backup-list"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Kategorien verwalten -->
+<div class="modal-backdrop" id="categories-backdrop">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h2>Kategorien verwalten</h2>
+      <button class="btn-icon" id="categories-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="confirm-body">
+      <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 14px">
+        Umbenennen wirkt auf alle Jobs der Kategorie. Wird ein bereits
+        vorhandener Name eingetragen, werden beide Kategorien zusammengeführt.
+        Ein leerer Name entfernt die Kategoriezuordnung.
+      </p>
+      <div id="categories-list" class="categories-list"></div>
+      <div id="categories-result" style="font-size:12.5px;margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Änderungsprotokoll -->
+<div class="modal-backdrop" id="audit-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Änderungsprotokoll</h2>
+      <button class="btn-icon" id="audit-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="confirm-body">
+      <p style="font-size:12.5px;color:var(--text-dim);margin:0 0 12px">
+        Wer wann welchen Job angelegt, geändert oder gelöscht hat. Hilfreich bei der Frage
+        „seit wann läuft das nicht mehr?“.
+      </p>
+      <div id="audit-list" class="audit-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sendevorschau -->
+<div class="modal-backdrop" id="sende-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Gesendete Daten prüfen</h2>
+      <button class="btn-icon" id="sende-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="confirm-body">
+      <div id="sende-inhalt"><p class="chart-empty">Wird geladen …</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Warteschlange -->
+<div class="modal-backdrop" id="warte-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="warte-titel">Warteschlange</h2>
+      <button class="btn-icon" id="warte-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="confirm-body">
+      <div id="warte-inhalt"><p class="chart-empty">Wird geladen …</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

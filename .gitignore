@@ -1,0 +1,20 @@
+# Working files that never belong in the public repository
+CLAUDE.md
+_referenz/
+
+# Runtime and customer data
+config.json
+version.json
+data/*
+!data/.gitkeep
+runtime/*
+!runtime/README.txt
+node_modules/
+tests/tmp/
+
+# Packages and office files
+*.zip
+*.pptx
+*.pdf
+!tests/fixtures/*.pdf
+.DS_Store
