@@ -1,0 +1,41 @@
+name: Bug report / Fehlermeldung
+description: Something does not work as expected. / Etwas funktioniert nicht wie erwartet.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach real documents, credentials or internal host names. Security issues: see SECURITY.md.
+        Bitte keine echten Dokumente, Zugangsdaten oder internen Rechnernamen anhängen. Sicherheitslücken: siehe SECURITY.de.md.
+  - type: input
+    id: version
+    attributes:
+      label: Folderpost version / Version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Node.js version / Betriebssystem und Node.js-Version
+      placeholder: "macOS 15, Node.js 22.11"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Schritte zum Nachstellen
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour / Erwartetes und tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt / Protokollauszug
+      description: Relevant lines from the transfer log or the console (anonymised). / Relevante Zeilen aus Protokoll oder Konsole (anonymisiert).
+      render: text
