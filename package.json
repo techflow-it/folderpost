@@ -1,6 +1,6 @@
 {
   "name": "folderpost",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Self-hosted folder-to-API file transfer with QR-based document splitting",
   "main": "server.js",
   "scripts": {

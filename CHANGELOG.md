@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Deutsche Fassung](CHANGELOG.de.md)
 
+## [1.0.1] – 2026-10-06
+
+### Fixed
+- Statistics summary now reads "transfer(s)" instead of "transfers" for a single transfer.
+
+### Changed
+- CI workflow uses the current versions of the GitHub actions (Node 20 is deprecated on GitHub).
+- Website links removed from the documentation and package metadata; support is provided via GitHub Issues.
+
 ## [1.0.0] – 2026-10-06
 
 First public release under the GNU GPL v3.0 or later.
@@ -27,4 +36,5 @@ First public release under the GNU GPL v3.0 or later.
 - `PORT` and `HOST` environment variables and an optional `host` setting.
 - Tests with synthetic PDF fixtures and a CI workflow for Linux, macOS and Windows.
 
+[1.0.1]: https://github.com/TechFlow-IT/folderpost/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TechFlow-IT/folderpost/releases/tag/v1.0.0
