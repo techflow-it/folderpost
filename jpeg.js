@@ -1,6 +1,6 @@
-// Baseline-JPEG-Decoder in reinem JavaScript.
-// Liefert ein Graustufenbild — mehr wird fuer die Barcode-Erkennung nicht gebraucht.
-// Unterstuetzt sequentielle Baseline-JPEGs (SOF0/SOF1), Farb- und Graustufenbilder.
+// Baseline JPEG decoder in plain JavaScript.
+// Returns a greyscale image — that is all barcode detection needs.
+// Supports sequential baseline JPEGs (SOF0/SOF1), colour and greyscale images.
 
 const ZICKZACK = new Int32Array([
    0,  1,  8, 16,  9,  2,  3, 10,
@@ -14,7 +14,7 @@ const ZICKZACK = new Int32Array([
 ]);
 
 function baueHuffmanTabelle(anzahlProLaenge, werte) {
-  // Aus den Laengenzaehlern die Codes ableiten und in eine Nachschlagestruktur legen
+  // Derive the codes from the length counters and put them into a lookup structure
   const tabelle = new Map();
   let code = 0;
   let k = 0;
@@ -45,13 +45,13 @@ class BitLeser {
       if (b === 0xFF) {
         const naechstes = this.daten[this.pos];
         if (naechstes === 0x00) {
-          this.pos += 1; // gestopftes Byte
+          this.pos += 1; // stuffed byte
         } else if (naechstes >= 0xD0 && naechstes <= 0xD7) {
-          this.pos += 1; // Neustart-Marke
+          this.pos += 1; // restart marker
           b = this.daten[this.pos];
           this.pos += 1;
         } else {
-          return 0; // Marke erreicht
+          return 0; // marker reached
         }
       }
       this.puffer = b;
@@ -82,13 +82,13 @@ class BitLeser {
   }
 }
 
-// Vorzeichenbehaftete Zahl aus n Bits (JPEG-Kodierung)
+// Signed number from n bits (JPEG encoding)
 function erweitere(wert, n) {
   if (n === 0) return 0;
   return wert < (1 << (n - 1)) ? wert - (1 << n) + 1 : wert;
 }
 
-// Trennbare inverse Cosinus-Transformation (Gleitkomma, ausreichend schnell)
+// Separable inverse cosine transform (floating point, fast enough)
 const COS = (() => {
   const t = new Float32Array(64);
   for (let x = 0; x < 8; x += 1) {
@@ -120,12 +120,12 @@ function idct(block, ausgabe) {
 }
 
 /**
- * Dekodiert ein Baseline-JPEG zu einem Graustufenbild.
- * Rueckgabe: { breite, hoehe, grau: Uint8Array } oder { fehler: '...' }
+ * Decodes a baseline JPEG into a greyscale image.
+ * Returns { breite, hoehe, grau: Uint8Array } or { fehler: '...' }
  */
 function dekodiereJpeg(daten) {
-  let pos = 2; // FFD8 ueberspringen
-  if (!(daten[0] === 0xFF && daten[1] === 0xD8)) return { fehler: 'Keine JPEG-Datei' };
+  let pos = 2; // skip FFD8
+  if (!(daten[0] === 0xFF && daten[1] === 0xD8)) return { fehler: 'Not a JPEG file' };
 
   const quant = {};
   const huffDc = {};
@@ -144,7 +144,7 @@ function dekodiereJpeg(daten) {
     const abschnittEnde = pos + laenge;
     let p = pos + 2;
 
-    if (marke === 0xDB) { // Quantisierungstabellen
+    if (marke === 0xDB) { // quantization tables
       while (p < abschnittEnde) {
         const kennung = daten[p]; p += 1;
         const genauigkeit = kennung >> 4;
@@ -156,7 +156,7 @@ function dekodiereJpeg(daten) {
         }
         quant[nr] = tabelle;
       }
-    } else if (marke === 0xC4) { // Huffman-Tabellen
+    } else if (marke === 0xC4) { // Huffman tables
       while (p < abschnittEnde) {
         const kennung = daten[p]; p += 1;
         const klasse = kennung >> 4;
@@ -171,7 +171,7 @@ function dekodiereJpeg(daten) {
         const tabelle = baueHuffmanTabelle(anzahl, werte);
         if (klasse === 0) huffDc[nr] = tabelle; else huffAc[nr] = tabelle;
       }
-    } else if (marke === 0xC0 || marke === 0xC1) { // Baseline / erweitert sequentiell
+    } else if (marke === 0xC0 || marke === 0xC1) { // baseline / extended sequential
       const hoehe = (daten[p + 1] << 8) | daten[p + 2];
       const breite = (daten[p + 3] << 8) | daten[p + 4];
       const anzahlKomponenten = daten[p + 5];
@@ -188,11 +188,11 @@ function dekodiereJpeg(daten) {
       }
       rahmen = { breite, hoehe, komponenten };
     } else if (marke === 0xC2) {
-      return { fehler: 'Progressives JPEG wird nicht unterstützt' };
+      return { fehler: 'Progressive JPEG is not supported' };
     } else if (marke === 0xDD) {
       neustartIntervall = (daten[p] << 8) | daten[p + 1];
-    } else if (marke === 0xDA) { // Beginn der Bilddaten
-      if (!rahmen) return { fehler: 'JPEG ohne Bildkopf' };
+    } else if (marke === 0xDA) { // Start of image data
+      if (!rahmen) return { fehler: 'JPEG without frame header' };
       const anzahlScan = daten[p]; p += 1;
       const scanKomponenten = [];
       for (let i = 0; i < anzahlScan; i += 1) {
@@ -202,19 +202,19 @@ function dekodiereJpeg(daten) {
         scanKomponenten.push({ komp, dc: tabellen >> 4, ac: tabellen & 15 });
         p += 2;
       }
-      p += 3; // Spektralauswahl, bei Baseline ohne Bedeutung
+      p += 3; // Spectral selection, irrelevant for baseline
 
       return dekodiereBilddaten(daten, p, rahmen, scanKomponenten, quant, huffDc, huffAc, neustartIntervall);
     }
 
     pos = abschnittEnde;
   }
-  return { fehler: 'Keine Bilddaten im JPEG gefunden' };
+  return { fehler: 'No image data found in the JPEG' };
 }
 
 function dekodiereBilddaten(daten, start, rahmen, scanKomponenten, quant, huffDc, huffAc, neustartIntervall) {
   const { breite, hoehe, komponenten } = rahmen;
-  if (!breite || !hoehe) return { fehler: 'Ungültige Bildabmessungen' };
+  if (!breite || !hoehe) return { fehler: 'Invalid image dimensions' };
 
   const maxH = Math.max(...komponenten.map((k) => k.h));
   const maxV = Math.max(...komponenten.map((k) => k.v));
@@ -223,7 +223,7 @@ function dekodiereBilddaten(daten, start, rahmen, scanKomponenten, quant, huffDc
   const mcusX = Math.ceil(breite / mcuBreite);
   const mcusY = Math.ceil(hoehe / mcuHoehe);
 
-  // Nur die Helligkeitskomponente wird gebraucht
+  // Only the luminance component is needed
   const y = komponenten[0];
   const yBreite = mcusX * y.h * 8;
   const yHoehe = mcusY * y.v * 8;
@@ -241,7 +241,7 @@ function dekodiereBilddaten(daten, start, rahmen, scanKomponenten, quant, huffDc
     for (let mx = 0; mx < mcusX; mx += 1) {
       if (neustartIntervall && mcuZaehler > 0 && mcuZaehler % neustartIntervall === 0) {
         leser.ausrichten();
-        // Neustart-Marke ueberspringen
+        // Skip restart marker
         while (leser.pos < daten.length - 1) {
           if (daten[leser.pos] === 0xFF && daten[leser.pos + 1] >= 0xD0 && daten[leser.pos + 1] <= 0xD7) {
             leser.pos += 2;
@@ -261,13 +261,13 @@ function dekodiereBilddaten(daten, start, rahmen, scanKomponenten, quant, huffDc
             const q = quant[k.quant];
             if (!q) return { fehler: 'Fehlende Quantisierungstabelle' };
 
-            // Gleichanteil
+            // DC coefficient
             const t = leser.huffman(huffDc[sk.dc] || new Map());
             const diff = t === 0 ? 0 : erweitere(leser.bits(t), t);
             vorher[k.id] += diff;
             block[0] = vorher[k.id] * q[0];
 
-            // Wechselanteile
+            // AC coefficients
             let i = 1;
             while (i < 64) {
               const rs = leser.huffman(huffAc[sk.ac] || new Map());
@@ -299,8 +299,8 @@ function dekodiereBilddaten(daten, start, rahmen, scanKomponenten, quant, huffDc
     }
   }
 
-  // Auf die tatsaechliche Bildgroesse zuschneiden und ggf. hochskalieren,
-  // falls die Helligkeit unterabgetastet vorliegt (bei Scans selten)
+  // Crop to the actual image size and upscale if necessary,
+  // in case the luminance is subsampled (rare for scans)
   const grau = new Uint8Array(breite * hoehe);
   const skalaX = (y.h * 8 * mcusX) / (maxH * 8 * mcusX);
   const skalaY = (y.v * 8 * mcusY) / (maxV * 8 * mcusY);

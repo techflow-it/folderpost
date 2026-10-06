@@ -1,5 +1,5 @@
-// Folderpost — Backend
-// Reine Node.js Bordmittel, keine externen npm-Pakete nötig.
+// Folderpost — backend
+// Plain Node.js built-in modules, no external npm packages required.
 
 const http = require('http');
 const https = require('https');
@@ -14,16 +14,18 @@ const pdfteilen = require('./pdf-split');
 const aktualisierung = require('./update');
 const { dekodiereJpeg } = require('./jpeg');
 const { leseQr } = require('./qr');
+const i18n = require('./i18n');
+const { L } = i18n;
 
 const VERSION = require('./package.json').version;
 
-// Bauzeitpunkt: Änderungsdatum der server.js. So lassen sich zwei Pakete
-// mit gleicher Versionsnummer trotzdem unterscheiden.
+// Build time: modification date of server.js. This way two packages
+// with the same version number can still be told apart.
 const BAUSTAND = (() => {
   try { return fs.statSync(__filename).mtime.toISOString(); } catch { return null; }
 })();
 
-// Vergleicht Versionsangaben wie "1.4.0" — Rückgabe >0, wenn a neuer als b
+// Compares versions such as "1.4.0" — returns >0 if a is newer than b
 function versionVergleich(a, b) {
   const za = String(a).split('.').map((x) => parseInt(x, 10) || 0);
   const zb = String(b).split('.').map((x) => parseInt(x, 10) || 0);
@@ -40,19 +42,20 @@ const LOG_PATH = path.join(ROOT, 'data', 'logs.jsonl');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const MAX_LOG_LINES_RETURNED = 500;
 
-// ---------- Konfiguration ----------
+// ---------- Configuration ----------
 
 function defaultSettings() {
   return {
     logRetentionDays: 90,
     dashboardAuth: { enabled: false, username: '', passwordHash: '', salt: '' },
     jobUebersichtImLogin: true,
-    logoDatenUrl: '',      // Logo als Data-URL (klein halten)
-    akzentFarbe: '',       // z. B. #D0764C — leer = Standard
-    anzeigeName: '',       // eigener Anzeigename — leer = Projektname
+    logoDatenUrl: '',      // logo as data URL (keep it small)
+    akzentFarbe: '',       // e.g. #D0764C — empty = default
+    anzeigeName: '',       // custom display name — empty = project name
     updatePruefUrl: '',
-    neustartVerhalten: 'selbst',  // 'selbst' = neuen Vorgang starten, 'beenden' = nur beenden
-    letzteUpdatePruefung: null, // Job-Namen und -Zustände schon vor der Anmeldung zeigen
+    neustartVerhalten: 'selbst',  // 'selbst' = start a new process, 'beenden' = only stop
+    language: 'en',               // language for the log, notifications and background messages
+    letzteUpdatePruefung: null, // show job names and states before sign-in
     benutzer: [], // [{ id, name, anzeigename, salt, hash, verfahren, rolle }]
     benachrichtigung: {
       emailAktiv: false,
@@ -64,18 +67,18 @@ function defaultSettings() {
   };
 }
 
-// ---------- Benutzer & Sitzungen ----------
+// ---------- Users & sessions ----------
 
 const sitzungen = new Map(); // token -> { benutzerId, name, anzeigename, rolle, seit }
 
-// Fehlversuche je Benutzername — nur im Arbeitsspeicher, nach Neustart leer
+// failed attempts per user name — in memory only, empty after a restart
 const anmeldeSperren = new Map();
 const SITZUNG_DAUER = 12 * 60 * 60 * 1000;
 
-// Passwörter werden mit PBKDF2 abgeleitet: Ein einfacher SHA-256 lässt sich
-// milliardenfach pro Sekunde durchprobieren, 200.000 Runden bremsen das
-// erheblich aus. Altbestände im alten Verfahren bleiben anmeldefähig und
-// werden bei der nächsten Anmeldung still umgestellt.
+// Passwords are derived with PBKDF2: a plain SHA-256 can be tried billions
+// of times per second, 200,000 rounds slow that down considerably. Existing
+// hashes in the old scheme can still sign in and are silently upgraded
+// at the next sign-in.
 const PBKDF2_RUNDEN = 200000;
 
 function hashPasswort(passwort, salt) {
@@ -86,7 +89,7 @@ function hashPasswortAlt(passwort, salt) {
   return crypto.createHash('sha256').update(salt + passwort).digest('hex');
 }
 
-// Vergleich ohne Laufzeitunterschied, damit sich Zeichen nicht erraten lassen
+// Constant-time comparison so that characters cannot be guessed
 function gleichSicher(a, b) {
   const pa = Buffer.from(String(a));
   const pb = Buffer.from(String(b));
@@ -122,27 +125,27 @@ function aktuelleSitzung(req) {
   return { token, ...s };
 }
 
-// Ohne angelegte Benutzer ist die Anwendung offen — dann darf jeder alles.
-// Sobald Benutzer existieren, entscheidet die Rolle.
+// Without users the application is open — then everyone may do everything.
+// As soon as users exist, the role decides.
 function istVerwaltung(req) {
   if (!zugriffsschutzAktiv()) return true;
   const s = aktuelleSitzung(req);
   return Boolean(s && s.rolle === 'verwaltung');
 }
 
-// Betrachter dürfen ausschließlich lesen — jede verändernde Anfrage wird
-// zentral abgewiesen, unabhängig vom einzelnen Endpunkt.
+// Viewers may only read — every changing request is rejected
+// centrally, regardless of the individual endpoint.
 function istBetrachter(req) {
   if (!zugriffsschutzAktiv()) return false;
   const s = aktuelleSitzung(req);
   return Boolean(s && s.rolle === 'betrachter');
 }
 
-// Name für das Änderungsprotokoll
+// name for the change log
 function benutzerName(req) {
   const s = aktuelleSitzung(req);
   if (s) return s.anzeigename || s.name;
-  return zugriffsschutzAktiv() ? 'unbekannt' : 'ohne Anmeldung';
+  return zugriffsschutzAktiv() ? 'unknown' : 'not signed in';
 }
 
 function loadConfig() {
@@ -156,8 +159,8 @@ function loadConfig() {
   if (!loaded.settings.dashboardAuth) loaded.settings.dashboardAuth = defaultSettings().dashboardAuth;
   if (!loaded.settings.logRetentionDays) loaded.settings.logRetentionDays = 90;
   if (!loaded.settings.benachrichtigung) loaded.settings.benachrichtigung = defaultSettings().benachrichtigung;
-  // Felder, die diese Fassung nicht kennt (z. B. aus älteren Versionen), werden
-  // ignoriert und beim nächsten Speichern verworfen.
+  // Fields this version does not know (e.g. from older versions) are
+  // ignored and dropped at the next save.
   const bekannt = new Set([...Object.keys(defaultSettings()), 'qrBefehl', 'language']);
   Object.keys(loaded.settings).forEach((k) => { if (!bekannt.has(k)) delete loaded.settings[k]; });
   return loaded;
@@ -177,10 +180,10 @@ function backupConfig() {
     const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('config-')).sort();
     while (files.length > MAX_BACKUPS) {
       const oldest = files.shift();
-      try { fs.unlinkSync(path.join(BACKUP_DIR, oldest)); } catch { /* egal */ }
+      try { fs.unlinkSync(path.join(BACKUP_DIR, oldest)); } catch { /* ignore */ }
     }
   } catch (err) {
-    console.log('Konfigurations-Sicherung fehlgeschlagen:', err.message);
+    console.log('Configuration backup failed:', err.message);
   }
 }
 
@@ -188,17 +191,17 @@ function appendAudit(action, details) {
   try {
     fs.mkdirSync(path.dirname(AUDIT_PATH), { recursive: true });
     fs.appendFileSync(AUDIT_PATH, JSON.stringify({ ts: new Date().toISOString(), action, ...details }) + '\n');
-  } catch { /* Protokollierung darf den Betrieb nicht stoppen */ }
+  } catch { /* logging must not stop operation */ }
 }
 
-// ---------- Benachrichtigung bei Störung ----------
-// Wird eine Datei nach wiederholten Fehlversuchen in die Quarantäne verschoben,
-// kann das per E-Mail und/oder Webhook gemeldet werden — konfiguriert unter
-// den Einstellungen, nicht je Job, damit eine Stelle für alle Jobs reicht.
+// ---------- Notification on failures ----------
+// If a file is moved to quarantine after repeated failed attempts, this can
+// be reported by e-mail and/or webhook — configured in the settings, not per
+// job, so that one place is enough for all jobs.
 
 function sendeWebhook(urlStr, payload, cb) {
   let ziel;
-  try { ziel = new URL(urlStr); } catch { return cb({ ok: false, fehler: 'Ungültige Webhook-URL' }); }
+  try { ziel = new URL(urlStr); } catch { return cb({ ok: false, fehler: L('Invalid webhook URL') }); }
   const lib = ziel.protocol === 'http:' ? http : https;
   const body = JSON.stringify(payload);
   let erledigt = false;
@@ -213,13 +216,13 @@ function sendeWebhook(urlStr, payload, cb) {
       timeout: 10000,
       rejectUnauthorized: false,
     }, (res) => {
-      res.on('data', () => {}); // Antwortinhalt wird nicht gebraucht
+      res.on('data', () => {}); // response body is not needed
       res.on('end', () => {
         const ok = res.statusCode >= 200 && res.statusCode < 300;
         fertig({ ok, fehler: ok ? null : `HTTP ${res.statusCode}` });
       });
     });
-    anfrage.on('timeout', () => { anfrage.destroy(); fertig({ ok: false, fehler: 'Zeitüberschreitung' }); });
+    anfrage.on('timeout', () => { anfrage.destroy(); fertig({ ok: false, fehler: L('Timeout') }); });
     anfrage.on('error', (e) => fertig({ ok: false, fehler: e.message }));
     anfrage.write(body);
     anfrage.end();
@@ -228,27 +231,27 @@ function sendeWebhook(urlStr, payload, cb) {
   }
 }
 
-// Schickt eine Testbenachrichtigung über alle aktivierten Kanäle und liefert
-// das Ergebnis je Kanal zurück — genutzt vom „Test senden“-Knopf.
+// Sends a test notification via all enabled channels and returns the
+// result per channel — used by the “Send test” button.
 function sendeTestBenachrichtigung(cfg) {
   const ergebnisse = {};
   const wartend = [];
   if (cfg.emailAktiv) {
     wartend.push(new Promise((resolve) => {
       zustellung.sendeBenachrichtigungsMail(
-        cfg, 'Folderpost: Testbenachrichtigung',
-        'Dies ist eine Testbenachrichtigung von Folderpost.\nIst diese Mail angekommen, ist die Einrichtung in Ordnung.',
+        cfg, L('Folderpost: test notification'),
+        L('This is a test notification from Folderpost.\nIf you received this e-mail, the setup is working.'),
         (r) => { ergebnisse.email = r.ok ? { ok: true } : { ok: false, fehler: r.errorText }; resolve(); },
       );
     }));
   }
   if (cfg.webhookAktiv) {
     if (!cfg.webhookUrl) {
-      ergebnisse.webhook = { ok: false, fehler: 'Keine Webhook-URL angegeben' };
+      ergebnisse.webhook = { ok: false, fehler: L('No webhook URL specified') };
     } else {
       wartend.push(new Promise((resolve) => {
         sendeWebhook(cfg.webhookUrl, {
-          ereignis: 'test', meldung: 'Testbenachrichtigung von Folderpost', zeitpunkt: new Date().toISOString(),
+          ereignis: 'test', meldung: L('Test notification from Folderpost'), zeitpunkt: new Date().toISOString(),
         }, (r) => { ergebnisse.webhook = r; resolve(); });
       }));
     }
@@ -256,9 +259,9 @@ function sendeTestBenachrichtigung(cfg) {
   return Promise.all(wartend).then(() => ergebnisse);
 }
 
-// Tatsächliche Auslösung bei einer Störung (Datei in Quarantäne). Höchstens
-// eine Benachrichtigung je Job innerhalb der Sperrfrist, damit ein Job mit
-// vielen betroffenen Dateien nicht ebenso viele Meldungen auslöst.
+// Actual trigger on a failure (file in quarantine). At most one
+// notification per job within the lock period, so that a job with many
+// affected files does not trigger just as many messages.
 const BENACHRICHTIGUNG_SPERRFRIST_MS = 15 * 60 * 1000;
 
 function sendeStoerungsBenachrichtigung(job, rt, grund, dateiName) {
@@ -270,19 +273,19 @@ function sendeStoerungsBenachrichtigung(job, rt, grund, dateiName) {
   rt.letzteBenachrichtigungTs = jetzt;
 
   const adresse = `http://${os.hostname()}:${config.port}`;
-  const betreff = `Folderpost: Datei in Quarantäne — ${job.name}`;
+  const betreff = L('Folderpost: file moved to quarantine — {job}', { job: job.name });
   const text = [
-    `Job: ${job.name}`,
-    `Datei: ${dateiName}`,
-    `Grund: ${grund}`,
-    `Zeitpunkt: ${new Date().toLocaleString('de-DE')}`,
+    L('Job: {job}', { job: job.name }),
+    L('File: {file}', { file: dateiName }),
+    L('Reason: {reason}', { reason: grund }),
+    L('Time: {time}', { time: new Date().toLocaleString(i18n.locale(i18n.getBackgroundLanguage())) }),
     '',
-    `Folderpost (Adresse ggf. an das eigene Netz anpassen): ${adresse}`,
+    L('Folderpost (adjust the address to your network if necessary): {address}', { address: adresse }),
   ].join('\n');
 
   if (cfg.emailAktiv) {
     zustellung.sendeBenachrichtigungsMail(cfg, betreff, text, (r) => {
-      if (!r.ok) console.log('Benachrichtigung per E-Mail fehlgeschlagen:', r.errorText);
+      if (!r.ok) console.log('E-mail notification failed:', r.errorText);
     });
   }
   if (cfg.webhookAktiv && cfg.webhookUrl) {
@@ -290,7 +293,7 @@ function sendeStoerungsBenachrichtigung(job, rt, grund, dateiName) {
       ereignis: 'quarantaene', job: job.name, jobId: job.id, datei: dateiName,
       grund, zeitpunkt: new Date().toISOString(), adresse,
     }, (r) => {
-      if (!r.ok) console.log('Benachrichtigung per Webhook fehlgeschlagen:', r.fehler);
+      if (!r.ok) console.log('Webhook notification failed:', r.fehler);
     });
   }
 }
@@ -302,7 +305,7 @@ function readAudit(limit = 200) {
     .filter(Boolean).reverse().slice(0, limit);
 }
 
-// Register bereits gesendeter Dateien (Pruefsumme je Job) fuer die Duplikat-Erkennung
+// Register of files already sent (checksum per job) for duplicate detection
 let dedupeStore = {};
 function loadDedupe() {
   try { dedupeStore = JSON.parse(fs.readFileSync(DEDUPE_PATH, 'utf8')); } catch { dedupeStore = {}; }
@@ -311,7 +314,7 @@ function saveDedupe() {
   try {
     fs.mkdirSync(path.dirname(DEDUPE_PATH), { recursive: true });
     fs.writeFileSync(DEDUPE_PATH, JSON.stringify(dedupeStore));
-  } catch { /* egal */ }
+  } catch { /* ignore */ }
 }
 function fileHash(filePath) {
   const buf = fs.readFileSync(filePath);
@@ -323,7 +326,7 @@ function isDuplicate(jobId, hash) {
 function rememberHash(jobId, hash, fileName) {
   if (!dedupeStore[jobId]) dedupeStore[jobId] = {};
   dedupeStore[jobId][hash] = { file: fileName, ts: new Date().toISOString() };
-  // Register begrenzen, damit die Datei nicht unbegrenzt waechst
+  // Limit the register so that the file does not grow without bounds
   const entries = Object.entries(dedupeStore[jobId]);
   if (entries.length > 5000) {
     entries.sort((a, b) => new Date(a[1].ts) - new Date(b[1].ts));
@@ -339,8 +342,9 @@ function saveConfig(cfg) {
 }
 
 let config = loadConfig();
+i18n.setBackgroundLanguage(config.settings.language);
 
-// Laufzeitstatus pro Job (nicht persistiert)
+// Runtime status per job (not persisted)
 const jobRuntime = {}; // id -> { lastRunTs, lastResult, running, nextDueTs }
 
 function ensureRuntime(job) {
@@ -370,19 +374,19 @@ function readLogs({ jobId, status, limit, q } = {}) {
   if (jobId) entries = entries.filter((e) => e.jobId === jobId);
   if (status) entries = entries.filter((e) => e.status === status);
   if (q && q.trim()) {
-    // Volltextsuche über die Felder, in denen ein Dateiname, eine
-    // Auftragsnummer oder eine Antwort der Gegenstelle typischerweise steht.
+    // Full-text search across the fields that typically contain a file name,
+    // an order number or a response from the receiving side.
     const gesucht = q.trim().toLowerCase();
     entries = entries.filter((e) => [
       e.jobName, e.file, e.message, e.qrWert, e.probennummer, e.targetUrl, e.httpStatus,
     ].some((feld) => feld !== undefined && feld !== null && String(feld).toLowerCase().includes(gesucht)));
   }
-  entries.reverse(); // neueste zuerst
+  entries.reverse(); // newest first
   const n = Math.min(limit || MAX_LOG_LINES_RETURNED, MAX_LOG_LINES_RETURNED);
   return entries.slice(0, n);
 }
 
-// ---------- Datei-Matching ----------
+// ---------- File matching ----------
 
 function globToRegExp(glob) {
   const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
@@ -394,7 +398,7 @@ function listMatchingFiles(sourcePath, pattern, options = {}) {
   try {
     entries = fs.readdirSync(sourcePath, { withFileTypes: true });
   } catch (err) {
-    throw new Error(`Ordner nicht erreichbar: ${sourcePath} (${err.code || err.message})`);
+    throw new Error(L('Folder not reachable: {path} ({code})', { path: sourcePath, code: err.code || err.message }));
   }
   const re = globToRegExp(pattern || '*');
   const minAgeMs = (options.minFileAgeSec || 0) * 1000;
@@ -410,7 +414,7 @@ function listMatchingFiles(sourcePath, pattern, options = {}) {
     let stat;
     try { stat = fs.statSync(full); } catch { return; }
 
-    // Die Datei wird moeglicherweise noch geschrieben: erst nach Ruhezeit senden
+    // The file may still be being written: send only after the settle time
     if (minAgeMs > 0 && (now - stat.mtimeMs) < minAgeMs) { tooYoung.push(e.name); return; }
     if (maxBytes > 0 && stat.size > maxBytes) { tooLarge.push({ name: e.name, size: stat.size }); return; }
     accepted.push(full);
@@ -419,13 +423,13 @@ function listMatchingFiles(sourcePath, pattern, options = {}) {
   return { accepted, tooYoung, tooLarge };
 }
 
-// ---------- curl-Ausführung ----------
+// ---------- curl execution ----------
 
 function buildCurlArgs(job, filePath) {
   const args = ['-sS', '-o', '-', '-w', '\n__HTTP_STATUS__:%{http_code}', '-X', job.method || 'POST'];
   const headers = [...(job.headers || [])];
-  // Bei der PDF-Verarbeitung wird JSON gesendet — passenden Content-Type ergaenzen,
-  // sofern der Job nicht bereits selbst einen gesetzt hat
+  // PDF processing sends JSON — add a matching Content-Type,
+  // unless the job has already set one itself
   if (job.processor === 'pdf-qr-json' && job.sendeFormat !== 'multipart-metadata'
       && !headers.some((h) => /^content-type:/i.test((h || '').trim()))) {
     headers.push('Content-Type: application/json; charset=utf-8');
@@ -436,10 +440,10 @@ function buildCurlArgs(job, filePath) {
   }
   (job.curlExtraArgs || []).forEach((a) => { if (a && a.trim()) args.push(a.trim()); });
 
-  // Sendung aus der PDF-Verarbeitung: PDF-Datei plus Metadatenfeld
+  // Upload from PDF processing: PDF file plus metadata field
   if (filePath && typeof filePath === 'object' && filePath.modus === 'multipart') {
     args.push('-F', `${job.dateiFeldName || 'file1'}=@${filePath.pdfPfad};type=application/pdf`);
-    // "=<datei" liest den Feldwert aus der Datei — vermeidet Anfuehrungszeichen-Probleme
+    // "=<file" reads the field value from the file — avoids quoting problems
     args.push('-F', `${job.metadataFeldName || 'metadata1'}=<${filePath.metaPfad}`);
     args.push(job.targetUrl);
     return args;
@@ -460,12 +464,12 @@ function runCurl(job, filePath, cb, targetOverride) {
   const effective = targetOverride ? { ...job, targetUrl: targetOverride } : job;
 
   if (job.dryRun) {
-    // Testmodus: nichts senden, nur protokollieren, was passiert waere
+    // Test mode: send nothing, only log what would have happened
     return cb({
       ok: true,
       exitCode: 0,
       httpStatus: 'TEST',
-      bodySnippet: `Testmodus — es wurde NICHTS gesendet. Ziel wäre: ${effective.targetUrl}`,
+      bodySnippet: L('Test mode — NOTHING was sent. Target would be: {target}', { target: effective.targetUrl }),
       errorText: null,
       dryRun: true,
     });
@@ -493,9 +497,9 @@ function runCurl(job, filePath, cb, targetOverride) {
   });
 }
 
-// Sendet an Haupt- und Zusatzziele; Gesamtergebnis nur ok, wenn alle Ziele ok sind
+// Sends to the main and additional targets; the overall result is only ok if all targets are ok
 function runCurlAllTargets(job, filePath, cb) {
-  // Andere Zieltypen als HTTP werden direkt bedient
+  // Target types other than HTTP are handled directly
   if (job.zielTyp === 'ordner' || job.zielTyp === 'email') {
     const pfad = (filePath && typeof filePath === 'object')
       ? (filePath.modus === 'multipart' ? filePath.pdfPfad : filePath.sendePfad)
@@ -506,7 +510,7 @@ function runCurlAllTargets(job, filePath, cb) {
     if (job.dryRun) {
       return cb({
         ok: true, exitCode: 0, httpStatus: 'TEST', dryRun: true, errorText: null,
-        bodySnippet: `Testmodus — nichts gesendet. Ziel wäre: ${job.zielTyp === 'ordner' ? job.zielOrdner : job.mailAn}`,
+        bodySnippet: L('Test mode — nothing sent. Target would be: {target}', { target: job.zielTyp === 'ordner' ? job.zielOrdner : job.mailAn }),
       }, []);
     }
     const weiter = (r) => cb(r, [{ url: job.zielTyp === 'ordner' ? job.zielOrdner : job.mailAn, ...r }]);
@@ -517,7 +521,7 @@ function runCurlAllTargets(job, filePath, cb) {
   const targets = [job.targetUrl, ...(job.extraTargetUrls || [])].filter(Boolean);
   const results = [];
   let remaining = targets.length;
-  if (remaining === 0) return cb({ ok: false, exitCode: 1, httpStatus: null, bodySnippet: '', errorText: 'Keine Ziel-URL konfiguriert' }, []);
+  if (remaining === 0) return cb({ ok: false, exitCode: 1, httpStatus: null, bodySnippet: '', errorText: L('No target URL configured') }, []);
 
   targets.forEach((url, index) => {
     runCurl(job, filePath, (r) => {
@@ -527,21 +531,21 @@ function runCurlAllTargets(job, filePath, cb) {
       const allOk = results.every((x) => x.ok);
       const primary = results[0];
       const summary = targets.length > 1
-        ? results.map((x) => `${x.url} → ${x.ok ? 'OK' : 'FEHLER'}${x.httpStatus ? ' (' + x.httpStatus + ')' : ''}`).join(' | ')
+        ? results.map((x) => `${x.url} → ${x.ok ? 'OK' : L('ERROR')}${x.httpStatus ? ' (' + x.httpStatus + ')' : ''}`).join(' | ')
         : null;
       cb({
         ok: allOk,
         exitCode: primary.exitCode,
         httpStatus: primary.httpStatus,
         bodySnippet: summary ? summary + '\n' + (primary.bodySnippet || '') : primary.bodySnippet,
-        errorText: allOk ? null : results.filter((x) => !x.ok).map((x) => `${x.url}: ${x.errorText || x.bodySnippet || 'Fehler'}`).join(' | '),
+        errorText: allOk ? null : results.filter((x) => !x.ok).map((x) => `${x.url}: ${x.errorText || x.bodySnippet || L('Error')}`).join(' | '),
         dryRun: primary.dryRun,
       }, results);
     }, url);
   });
 }
 
-// ---------- Job-Verarbeitung ----------
+// ---------- Job processing ----------
 
 function moveFile(filePath, sourcePath, subfolder) {
   const dir = path.join(sourcePath, subfolder);
@@ -578,7 +582,7 @@ function processJob(job) {
   rt.waitingCount = scan.tooYoung.length;
   rt.wartendAufWiederholung = 0;
 
-  // Zu grosse Dateien einmalig protokollieren, damit sie nicht stillschweigend liegen bleiben
+  // Log files that are too large once, so that they do not silently stay behind
   rt.reportedOversize = rt.reportedOversize || new Set();
   scan.tooLarge.forEach((f) => {
     if (rt.reportedOversize.has(f.name)) return;
@@ -586,7 +590,10 @@ function processJob(job) {
     appendLog({
       ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
       file: f.name, fileSize: f.size, status: 'error', httpStatus: null,
-      message: `Übersprungen: Datei ist ${f.size >= 1024 * 1024 ? (f.size / 1024 / 1024).toFixed(1) + ' MB' : Math.round(f.size / 1024) + ' KB'} und überschreitet das Limit von ${job.maxFileSizeMB} MB.`,
+      message: L('Skipped: file is {size} and exceeds the limit of {limit} MB.', {
+        size: f.size >= 1024 * 1024 ? (f.size / 1024 / 1024).toFixed(1) + ' MB' : Math.round(f.size / 1024) + ' KB',
+        limit: job.maxFileSizeMB,
+      }),
     });
   });
 
@@ -600,9 +607,9 @@ function processJob(job) {
   let remaining = files.length;
   files.forEach((filePath) => {
     let fileSize = null;
-    try { fileSize = fs.statSync(filePath).size; } catch { /* Datei evtl. inzwischen weg */ }
+    try { fileSize = fs.statSync(filePath).size; } catch { /* the file may be gone by now */ }
 
-    // Wiederholungsstrategie: nach Fehlschlägen erst nach Wartezeit erneut
+    // Retry strategy: after failures, only retry after the waiting time
     if (!rt.versuche) rt.versuche = new Map();
     const versuchStand = rt.versuche.get(filePath);
     if (versuchStand && Date.now() < versuchStand.naechsterVersuch) {
@@ -612,25 +619,27 @@ function processJob(job) {
       return;
     }
 
-    // Für die Anzeige merken, welche Datei gerade bearbeitet wird
+    // Remember for the display which file is currently being processed
     if (!rt.inArbeit) rt.inArbeit = new Map();
     rt.inArbeit.set(filePath, { name: path.basename(filePath), seit: Date.now(), groesse: fileSize });
     const fertigMitDatei = () => { if (rt.inArbeit) rt.inArbeit.delete(filePath); };
 
-    // Duplikat-Erkennung: identischer Inhalt wurde fuer diesen Job schon uebertragen
+    // Duplicate detection: identical content has already been transferred for this job
     if (job.dedupe) {
       let hash = null;
-      try { hash = fileHash(filePath); } catch { /* nicht lesbar, normal weiterverarbeiten */ }
+      try { hash = fileHash(filePath); } catch { /* not readable, continue processing normally */ }
       if (hash && isDuplicate(job.id, hash)) {
         const prev = dedupeStore[job.id][hash];
         appendLog({
           ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
           file: path.basename(filePath), fileSize, status: 'error', httpStatus: null,
-          message: `Übersprungen: inhaltsgleiche Datei wurde bereits übertragen (als "${prev.file}" am ${new Date(prev.ts).toLocaleString('de-DE')}).`,
+          message: L('Skipped: a file with identical content was already transferred (as "{file}" on {time}).', {
+            file: prev.file, time: new Date(prev.ts).toLocaleString(i18n.locale(i18n.getBackgroundLanguage())),
+          }),
         });
         try {
-          if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_fehler');
-        } catch { /* egal */ }
+          if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_error');
+        } catch { /* ignore */ }
         rt.lastRunTs = Date.now();
         fertigMitDatei();
         remaining -= 1;
@@ -640,20 +649,20 @@ function processJob(job) {
       if (hash) rt.pendingHashes = Object.assign(rt.pendingHashes || {}, { [filePath]: hash });
     }
 
-    // Optionale Vorverarbeitung: statt der Originaldatei wird das Ergebnis gesendet
+    // Optional pre-processing: the result is sent instead of the original file
     const sendeMit = (sendung, verarbeitungsInfo, aufraeumPfade) => {
       runCurlAllTargets(job, sendung, (result) => {
-        (aufraeumPfade || []).forEach((f) => { try { fs.unlinkSync(f); } catch { /* egal */ } });
+        (aufraeumPfade || []).forEach((f) => { try { fs.unlinkSync(f); } catch { /* ignore */ } });
         verarbeiteErgebnis(result, verarbeitungsInfo);
       });
     };
 
-    // Stapelscan zuerst in Einzeldokumente zerlegen.
-    // Klappt das nicht (kein QR-Code, unbekannte Kompression), wird die Datei
-    // unverändert übertragen statt sie liegen zu lassen.
+    // Split a batch scan into individual documents first.
+    // If that does not work (no QR code, unknown compression), the file is
+    // transferred unchanged instead of being left behind.
     let aufteilenHinweis = null;
     if (job.stapelTeilen) {
-      // Liest den QR-Code aus einem Seitenbild — JPEG oder bereits Graustufen
+      // Reads the QR code from a page image — JPEG or already greyscale
       const leser = (seite) => {
         if (seite.art === 'grau') return leseQr(seite.grauDaten, seite.breite, seite.hoehe);
         const bild = dekodiereJpeg(seite.jpeg);
@@ -667,21 +676,21 @@ function processJob(job) {
       }
 
       if (!geteilt.ok) {
-        // Kein Grund, die Datei liegen zu lassen: Sie wird als Ganzes gesendet.
-        // Häufigster Fall — ein Dokument ohne Trenn-Codes im Stapelordner.
+        // No reason to leave the file behind: it is sent as a whole.
+        // Most common case — a document without separator codes in the batch folder.
         rt.aufteilungUebersprungen = (rt.aufteilungUebersprungen || 0) + 1;
-        aufteilenHinweis = `Ohne Aufteilung gesendet: ${geteilt.meldung}`;
+        aufteilenHinweis = L('Sent without splitting: {reason}', { reason: geteilt.meldung });
       } else {
 
-      // Teildokumente einzeln übertragen
+      // Transfer the parts individually
       const stamm = path.basename(filePath, path.extname(filePath));
       const teilOrdner = path.join(os.tmpdir(), 'fp-teil-' + crypto.randomBytes(6).toString('hex'));
       fs.mkdirSync(teilOrdner, { recursive: true });
       const vergebeneNamen = new Set();
       const teilPfade = geteilt.dokumente.map((d, i) => {
         let name = baueTeilNamen(job, stamm, i + 1, geteilt.dokumente.length, d, filePath);
-        // Liefert das Muster zweimal denselben Namen (z. B. nur {qrWert} bei
-        // gleichem Code), wird durchnummeriert statt überschrieben.
+        // If the pattern yields the same name twice (e.g. only {qrValue} with
+        // the same code), the names are numbered instead of overwritten.
         if (vergebeneNamen.has(name)) {
           const endung = path.extname(name);
           const basis = name.slice(0, -endung.length || undefined);
@@ -698,11 +707,11 @@ function processJob(job) {
       let offen = teilPfade.length;
       let fehlerAufgetreten = false;
       const aufraeumenTeile = () => {
-        try { fs.rmSync(teilOrdner, { recursive: true, force: true }); } catch { /* egal */ }
+        try { fs.rmSync(teilOrdner, { recursive: true, force: true }); } catch { /* ignore */ }
       };
 
       teilPfade.forEach((teil) => {
-        // Ohne Umwandlung wird das Teildokument unverändert gesendet
+        // Without conversion the part is sent unchanged
         const vorbereiten = (weiter) => {
           if (job.processor === 'pdf-qr-json') {
             return verarbeitung.pdfZuJson(job, teil.pfad, config.settings, weiter);
@@ -714,16 +723,16 @@ function processJob(job) {
           const abschluss = (ergebnis) => {
             appendLog({
               ts: new Date().toISOString(), jobId: job.id, jobName: job.name,
-              targetUrl: job.zielTyp === 'ordner' ? job.zielOrdner : job.zielTyp === 'email' ? `E-Mail an ${job.mailAn}` : job.targetUrl,
+              targetUrl: job.zielTyp === 'ordner' ? job.zielOrdner : job.zielTyp === 'email' ? L('E-mail to {to}', { to: job.mailAn }) : job.targetUrl,
               file: teil.name, fileSize: teil.groesse,
               status: ergebnis.ok ? 'success' : 'error',
               httpStatus: ergebnis.httpStatus, exitCode: ergebnis.exitCode,
               qrWert: teil.qrWert, probennummer: teil.qrWert, qrGefunden: Boolean(teil.qrWert),
               gesendeteMetadaten: tInfo ? tInfo.metadaten : undefined,
-              message: `Teil ${teil.name} aus „${path.basename(filePath)}" (${teil.seiten} Seite(n))`
-                + (teil.qrWert ? ` · QR: ${teil.qrWert}` : ' · ohne QR-Wert')
-                + (job.processor === 'pdf-qr-json' ? '' : ' · unverändert gesendet')
-                + ' · ' + (ergebnis.ok ? ergebnis.bodySnippet : (ergebnis.errorText || 'Fehler')),
+              message: L('Part {part} of “{source}” ({pages} page(s))', { part: teil.name, source: path.basename(filePath), pages: teil.seiten })
+                + (teil.qrWert ? ` · QR: ${teil.qrWert}` : ' · ' + L('no QR value'))
+                + (job.processor === 'pdf-qr-json' ? '' : ' · ' + L('sent unchanged'))
+                + ' · ' + (ergebnis.ok ? ergebnis.bodySnippet : (ergebnis.errorText || L('Error'))),
             });
             if (!ergebnis.ok) fehlerAufgetreten = true;
             offen -= 1;
@@ -733,9 +742,9 @@ function processJob(job) {
               rt.lastResult = fehlerAufgetreten ? 'error' : 'success';
               rt.consecutiveFailures = fehlerAufgetreten ? rt.consecutiveFailures + 1 : 0;
               if (!fehlerAufgetreten) {
-                try { if (job.onSuccess === 'archive') moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_gesendet'); } catch { /* egal */ }
+                try { if (job.onSuccess === 'archive') moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_sent'); } catch { /* ignore */ }
               } else {
-                try { if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_fehler'); } catch { /* egal */ }
+                try { if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_error'); } catch { /* ignore */ }
               }
               fertigMitDatei();
               remaining -= 1;
@@ -746,7 +755,7 @@ function processJob(job) {
           if (tFehler) return abschluss({ ok: false, errorText: tFehler, httpStatus: null, exitCode: 1 });
           runCurlAllTargets(job, tSendung, (ergebnis) => {
             if (tSendung && typeof tSendung === 'object') {
-              [tSendung.metaPfad, tSendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* egal */ } } });
+              [tSendung.metaPfad, tSendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* ignore */ } } });
             }
             abschluss(ergebnis);
           });
@@ -762,12 +771,12 @@ function processJob(job) {
           appendLog({
             ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
             file: path.basename(filePath), fileSize, status: 'error', httpStatus: null,
-            message: `Verarbeitung fehlgeschlagen: ${fehler}`,
+            message: L('Processing failed: {error}', { error: fehler }),
           });
           rt.lastRunTs = Date.now();
           rt.lastResult = 'error';
           rt.consecutiveFailures += 1;
-          try { if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_fehler'); } catch { /* egal */ }
+          try { if (job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_error'); } catch { /* ignore */ }
           fertigMitDatei();
           remaining -= 1;
           if (remaining === 0) rt.running = false;
@@ -787,7 +796,7 @@ function processJob(job) {
         jobId: job.id,
         jobName: job.name,
         targetUrl: job.zielTyp === 'ordner' ? job.zielOrdner
-          : job.zielTyp === 'email' ? `E-Mail an ${job.mailAn}`
+          : job.zielTyp === 'email' ? L('E-mail to {to}', { to: job.mailAn })
           : job.targetUrl,
         file: path.basename(filePath),
         fileSize,
@@ -800,16 +809,16 @@ function processJob(job) {
         qrGefunden: verarbeitungsInfo ? verarbeitungsInfo.qrGefunden : undefined,
         gesendeteMetadaten: verarbeitungsInfo ? verarbeitungsInfo.metadaten : undefined,
         message: (aufteilenHinweis ? `⚠ ${aufteilenHinweis} ` : '')
-          + (verarbeitungsInfo && !verarbeitungsInfo.qrGefunden ? `⚠ Ohne QR-Wert gesendet (${verarbeitungsInfo.qrHinweis}). ` : '')
+          + (verarbeitungsInfo && !verarbeitungsInfo.qrGefunden ? '⚠ ' + L('Sent without QR value ({reason}).', { reason: verarbeitungsInfo.qrHinweis }) + ' ' : '')
           + (verarbeitungsInfo && verarbeitungsInfo.qrGefunden ? `QR: ${verarbeitungsInfo.qrWert} · ` : '')
-          + (result.ok ? result.bodySnippet : (result.errorText || result.bodySnippet || 'Unbekannter Fehler')),
+          + (result.ok ? result.bodySnippet : (result.errorText || result.bodySnippet || L('Unknown error'))),
       };
       appendLog(entry);
       rt.lastRunTs = Date.now();
       rt.lastResult = entry.status;
       rt.consecutiveFailures = entry.status === 'success' ? 0 : rt.consecutiveFailures + 1;
 
-      // Versuchszähler je Datei führen
+      // Keep an attempt counter per file
       if (!rt.versuche) rt.versuche = new Map();
       if (result.ok) {
         rt.versuche.delete(filePath);
@@ -819,32 +828,32 @@ function processJob(job) {
         const grenze = Number(job.maxVersuche) || 0;
 
         if (grenze > 0 && anzahl >= grenze) {
-          // Endgültig gescheitert: aus dem Weg räumen, damit der Job weiterläuft
+          // Finally failed: move it out of the way so that the job keeps running
           rt.versuche.delete(filePath);
           try {
-            moveFile(filePath, job.sourcePath, job.quarantaeneSubfolder || '_quarantaene');
+            moveFile(filePath, job.sourcePath, job.quarantaeneSubfolder || '_quarantine');
             appendLog({
               ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
               file: path.basename(filePath), fileSize, status: 'error', httpStatus: null,
-              message: `In Quarantäne verschoben: ${anzahl} Versuche fehlgeschlagen. Ordner "${job.quarantaeneSubfolder || '_quarantaene'}". Nach Behebung der Ursache von dort zurückkopieren.`,
+              message: L('Moved to quarantine: {count} attempts failed. Folder "{folder}". Copy the file back from there once the cause has been fixed.', { count: anzahl, folder: job.quarantaeneSubfolder || '_quarantine' }),
             });
             sendeStoerungsBenachrichtigung(job, rt, entry.message, path.basename(filePath));
           } catch (e) {
             appendLog({
               ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
               file: path.basename(filePath), fileSize, status: 'error', httpStatus: null,
-              message: `Quarantäne fehlgeschlagen: ${e.message}`,
+              message: L('Moving to quarantine failed: {error}', { error: e.message }),
             });
           }
         } else {
-          // Wachsende Wartezeit: Basis × 2^(Versuche-1), gedeckelt auf eine Stunde
+          // Growing waiting time: base × 2^(attempts-1), capped at one hour
           const basis = (Number(job.wartezeitBasisSec) || 60) * 1000;
           const warten = Math.min(basis * Math.pow(2, anzahl - 1), 60 * 60 * 1000);
           rt.versuche.set(filePath, { anzahl, naechsterVersuch: Date.now() + warten, letzterFehler: entry.message });
         }
       }
 
-      // Erfolgreich uebertragene Pruefsumme merken (nicht im Testmodus)
+      // Remember the checksum of a successful transfer (not in test mode)
       if (result.ok && !result.dryRun && job.dedupe && rt.pendingHashes && rt.pendingHashes[filePath]) {
         rememberHash(job.id, rt.pendingHashes[filePath], path.basename(filePath));
         delete rt.pendingHashes[filePath];
@@ -852,17 +861,17 @@ function processJob(job) {
 
       try {
         if (result.dryRun) {
-          // Im Testmodus bleibt die Datei liegen, damit der Ablauf wiederholbar ist
+          // In test mode the file stays in place so that the run can be repeated
         } else if (result.ok && job.onSuccess === 'archive') {
-          moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_gesendet');
+          moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_sent');
         } else if (!result.ok && job.onError === 'archive') {
-          moveFile(filePath, job.sourcePath, job.errorSubfolder || '_fehler');
+          moveFile(filePath, job.sourcePath, job.errorSubfolder || '_error');
         }
       } catch (moveErr) {
         appendLog({
           ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
           file: path.basename(filePath), status: 'error', httpStatus: null,
-          message: `Übertragen, aber Verschieben fehlgeschlagen: ${moveErr.message}`,
+          message: L('Transferred, but moving the file failed: {error}', { error: moveErr.message }),
         });
       }
 
@@ -873,7 +882,7 @@ function processJob(job) {
   });
 }
 
-// ---------- Scanner-Loop ----------
+// ---------- Scanner loop ----------
 
 function tick() {
   const now = Date.now();
@@ -911,7 +920,7 @@ function readBody(req) {
 }
 
 function lastSuccessByJob() {
-  // Einmal ueber das Protokoll laufen und je Job den juengsten Erfolg merken
+  // Walk through the log once and remember the latest success per job
   const map = new Map();
   readAllLogs().forEach((l) => {
     if (l.status !== 'success' || !l.jobId) return;
@@ -921,18 +930,18 @@ function lastSuccessByJob() {
   return map;
 }
 
-// Prueft, ob zwei Dateimuster sich ueberschneiden koennen
+// Checks whether two file patterns can overlap
 function patternsOverlap(a, b) {
   const pa = (a || '*').toLowerCase();
   const pb = (b || '*').toLowerCase();
   if (pa === pb) return true;
   if (pa === '*' || pb === '*') return true;
-  // Endungsvergleich bei einfachen Mustern der Form *.xyz
+  // Compare extensions for simple patterns of the form *.xyz
   const extA = pa.startsWith('*.') ? pa.slice(1) : null;
   const extB = pb.startsWith('*.') ? pb.slice(1) : null;
   if (extA && extB) return extA === extB;
-  // Bei komplexeren Mustern konservativ von Ueberschneidung ausgehen,
-  // wenn eines der Muster das andere als Teilstring enthaelt
+  // For more complex patterns, conservatively assume an overlap
+  // if one pattern contains the other as a substring
   return pa.includes(pb.replace(/\*/g, '')) || pb.includes(pa.replace(/\*/g, ''));
 }
 
@@ -940,12 +949,12 @@ function normalizePath(p) {
   return (p || '').replace(/[/\\]+$/, '').replace(/\\/g, '/').toLowerCase();
 }
 
-function findConfigWarnings() {
+function findConfigWarnings(T = L) {
   const warnings = [];
   const aktive = config.jobs.filter((j) => !j.archived);
 
-  // Wiederholt ohne QR-Wert übertragen? Das deutet auf ein Erkennungsproblem
-  // (falsche Seite, unlesbarer Scan, PDF ohne eingebettetes JPEG).
+  // Repeatedly transferred without a QR value? That points to a detection problem
+  // (wrong page, unreadable scan, PDF without an embedded JPEG).
   const letzteLogs = readLogs({ limit: 200 });
   aktive.filter((j) => j.processor === 'pdf-qr-json').forEach((job) => {
     const eigene = letzteLogs.filter((l) => l.jobId === job.id && l.qrGefunden !== undefined).slice(0, 10);
@@ -956,19 +965,19 @@ function findConfigWarnings() {
         severity: 'hoch',
         type: 'qr-nie-erkannt',
         jobs: [job.name],
-        text: `Bei „${job.name}“ wurde in den letzten ${eigene.length} Übertragungen nie ein QR-Code erkannt. Die Dateien gehen ohne Zuordnungswert an die Schnittstelle. Über „⌕ gesendete Daten“ im Protokoll lässt sich prüfen, welches Bild ausgewertet wurde; das geprüfte Bild liegt im Unterordner _qr-pruefung.`,
+        text: T('No QR code was detected for “{job}” in the last {count} transfers. The files reach the API without a reference value. Use “⌕ sent data” in the log to check which image was evaluated; the checked image is stored in the subfolder _qr-check.', { job: job.name, count: eigene.length }),
       });
     } else if (ohne >= Math.ceil(eigene.length / 2)) {
       warnings.push({
         severity: 'mittel',
         type: 'qr-oft-nicht-erkannt',
         jobs: [job.name],
-        text: `Bei „${job.name}“ blieb in ${ohne} von ${eigene.length} Übertragungen der QR-Code unerkannt. Häufige Ursachen: QR liegt nicht auf der eingestellten Seite (${job.qrSeite}) oder der Scan ist zu grob.`,
+        text: T('For “{job}”, the QR code was not detected in {missed} of {count} transfers. Common causes: the QR code is not on the configured page ({page}) or the scan is too coarse.', { job: job.name, missed: ohne, count: eigene.length, page: job.qrSeite }),
       });
     }
   });
 
-  // 1) Zwei Jobs greifen auf denselben Ordner mit ueberlappendem Filter zu
+  // 1) Two jobs access the same folder with an overlapping filter
   for (let i = 0; i < aktive.length; i += 1) {
     for (let k = i + 1; k < aktive.length; k += 1) {
       const a = aktive[i];
@@ -980,55 +989,55 @@ function findConfigWarnings() {
         severity: 'hoch',
         type: 'ordner-kollision',
         jobs: [a.name, b.name],
-        text: `„${a.name}“ und „${b.name}“ überwachen denselben Ordner mit überschneidendem Filter (${a.filePattern} / ${b.filePattern}). Beide greifen sich gegenseitig Dateien weg — welcher Job eine Datei erwischt, ist zufällig.`,
+        text: T('“{a}” and “{b}” watch the same folder with overlapping filters ({filterA} / {filterB}). They take files away from each other — which job gets a file is random.', { a: a.name, b: b.name, filterA: a.filePattern, filterB: b.filePattern }),
       });
     }
   }
 
   aktive.forEach((job) => {
-    // 2) Archivordner liegt im ueberwachten Ordner UND der Filter wuerde ihn wieder erfassen
+    // 2) The archive folder is inside the watched folder AND the filter would pick it up again
     if (job.onSuccess === 'archive' && job.filePattern === '*') {
       warnings.push({
         severity: 'mittel',
         type: 'filter-zu-weit',
         jobs: [job.name],
-        text: `„${job.name}“ verwendet den Filter * — damit werden auch Dateien erfasst, die andere Programme gerade erst anlegen. Ein spezifischerer Filter (z. B. *.xml) ist meist sicherer.`,
+        text: T('“{job}” uses the filter * — this also picks up files that other programs are still creating. A more specific filter (e.g. *.xml) is usually safer.', { job: job.name }),
       });
     }
-    // 3) Archiv- und Fehlerordner identisch
-    if ((job.archiveSubfolder || '_gesendet') === (job.errorSubfolder || '_fehler')) {
+    // 3) Archive and error folder are identical
+    if ((job.archiveSubfolder || '_sent') === (job.errorSubfolder || '_error')) {
       warnings.push({
         severity: 'hoch',
         type: 'ordner-identisch',
         jobs: [job.name],
-        text: `Bei „${job.name}“ sind Archiv- und Fehler-Unterordner identisch — erfolgreiche und fehlgeschlagene Dateien landen im selben Ordner und sind nicht mehr unterscheidbar.`,
+        text: T('For “{job}”, the archive and error subfolders are identical — successful and failed files end up in the same folder and can no longer be told apart.', { job: job.name }),
       });
     }
-    // 4) Kurzes Intervall ohne Ruhezeit
+    // 4) Short interval without settle time
     if ((job.pollIntervalSec || 30) <= 10 && (job.minFileAgeSec || 0) === 0) {
       warnings.push({
         severity: 'mittel',
         type: 'keine-ruhezeit',
         jobs: [job.name],
-        text: `„${job.name}“ scannt alle ${job.pollIntervalSec}s ohne Ruhezeit. Schreibt ein anderes Programm in den Ordner, können halb geschriebene Dateien übertragen werden.`,
+        text: T('“{job}” scans every {seconds}s without a settle time. If another program writes to the folder, half-written files may be transferred.', { job: job.name, seconds: job.pollIntervalSec }),
       });
     }
-    // 5) Dateien werden nicht verschoben und nicht auf Duplikate geprueft
+    // 5) Files are neither moved nor checked for duplicates
     if (job.onSuccess === 'keep' && !job.dedupe) {
       warnings.push({
         severity: 'hoch',
         type: 'endlos-wiederholung',
         jobs: [job.name],
-        text: `„${job.name}“ belässt Dateien nach Erfolg im Ordner und prüft nicht auf Duplikate — dieselbe Datei wird bei jedem Scan erneut übertragen.`,
+        text: T('“{job}” leaves files in the folder after success and does not check for duplicates — the same file is transferred again on every scan.', { job: job.name }),
       });
     }
-    // 6) Testmodus laeuft dauerhaft
+    // 6) Test mode is permanently on
     if (job.dryRun && job.active) {
       warnings.push({
         severity: 'mittel',
         type: 'testmodus-aktiv',
         jobs: [job.name],
-        text: `„${job.name}“ läuft im Testmodus — es wird nichts wirklich gesendet. Falls das produktiv laufen soll, Testmodus deaktivieren.`,
+        text: T('“{job}” runs in test mode — nothing is actually sent. If it should run in production, turn off test mode.', { job: job.name }),
       });
     }
   });
@@ -1038,8 +1047,8 @@ function findConfigWarnings() {
 
 function jobPublicView(job, successMap) {
   const rt = ensureRuntime(job);
-  // Passwörter verlassen den Server nicht — weder das der HTTP-Anmeldung
-  // noch das des Mailservers.
+  // Passwords never leave the server — neither the one for HTTP authentication
+  // nor the one for the mail server.
   const { authPassword, smtpPasswort, ...safeJob } = job;
   const success = successMap ? successMap.get(job.id) : (lastSuccessByJob().get(job.id));
   return {
@@ -1082,16 +1091,18 @@ function sendCsv(res, filename, rows) {
     'Content-Type': 'text/csv; charset=utf-8',
     'Content-Disposition': `attachment; filename="${filename}"`,
   });
-  res.end('\uFEFF' + body); // BOM fuer Excel-Kompatibilitaet mit Umlauten
+  res.end('\uFEFF' + body); // BOM for Excel compatibility with non-ASCII characters
 }
 
 /**
- * Baut den Dateinamen eines Teildokuments nach dem Muster des Jobs.
- * Platzhalter: {stamm} {nr} {anzahl} {qrWert} {seiten} {datum} {zeit} {endung}
- * Fehlt der QR-Wert, entfallen die zugehörigen Trennzeichen sauber.
+ * Builds the file name of a part according to the job's pattern.
+ * Placeholders: {stem} {no} {number} {count} {qrValue} {pages} {date} {time} {ext}
+ * (equivalent to the older names {stamm} {nr} {nummer} {anzahl} {qrWert}
+ * {seiten} {datum} {zeit} {endung}).
+ * If the QR value is missing, the separators that belong to it are dropped cleanly.
  */
 function baueTeilNamen(job, stamm, nummer, anzahl, dokument, quellPfad) {
-  const muster = (job.teilNamensmuster || '{stamm}_{nr}_{qrWert}').trim() || '{stamm}_{nr}_{qrWert}';
+  const muster = (job.teilNamensmuster || '{stem}_{no}_{qrValue}').trim() || '{stem}_{no}_{qrValue}';
   const jetzt = new Date();
   const zwei = (n) => String(n).padStart(2, '0');
 
@@ -1106,22 +1117,27 @@ function baueTeilNamen(job, stamm, nummer, anzahl, dokument, quellPfad) {
     zeit: `${zwei(jetzt.getHours())}${zwei(jetzt.getMinutes())}${zwei(jetzt.getSeconds())}`,
     endung: path.extname(quellPfad).replace('.', '') || 'pdf',
   };
+  // English names of the placeholders
+  Object.assign(werte, {
+    stem: werte.stamm, no: werte.nr, number: werte.nummer, count: werte.anzahl, pages: werte.seiten,
+    qrValue: werte.qrWert, date: werte.datum, time: werte.zeit, ext: werte.endung,
+  });
 
   let name = muster;
   Object.entries(werte).forEach(([k, v]) => {
     name = name.split('{' + k + '}').join(v);
   });
 
-  // Unbekannte Platzhalter entfernen
+  // Remove unknown placeholders
   name = name.replace(/\{[a-zA-Z]+\}/g, '');
-  // Doppelte oder hängende Trennzeichen aufräumen, falls ein Wert leer blieb
+  // Clean up duplicate or dangling separators in case a value stayed empty
   name = name.replace(/[_\-. ]{2,}/g, (t) => t[0]).replace(/^[_\-. ]+|[_\-. ]+$/g, '');
-  // Verbotene Zeichen abfangen
+  // Catch forbidden characters
   name = name.replace(/[\\/:*?"<>|]/g, '');
 
-  // Ohne QR-Wert kann ein knappes Muster einen nichtssagenden Namen ergeben
-  // (etwa nur "03"). Dann den ursprünglichen Dateinamen voranstellen, damit
-  // die Datei zuordenbar bleibt.
+  // Without a QR value a short pattern can produce a meaningless name
+  // (e.g. just "03"). Then prepend the original file name so that the
+  // file can still be identified.
   const ohneEndung = name.replace(/\.[a-z0-9]+$/i, '');
   if (!dokument.qrWert && (!ohneEndung || ohneEndung.length < 4 || /^\d+$/.test(ohneEndung))) {
     name = `${stamm}_${zwei(nummer)}${ohneEndung && !/^\d+$/.test(ohneEndung) ? '_' + ohneEndung : ''}`;
@@ -1132,11 +1148,11 @@ function baueTeilNamen(job, stamm, nummer, anzahl, dokument, quellPfad) {
 }
 
 function normalizeJob(body, existingId) {
-  // Bisheriger Stand, damit Passwörter beim Bearbeiten erhalten bleiben
+  // Previous state, so that passwords are kept when editing
   const vorhanden = existingId ? config.jobs.find((j) => j.id === existingId) : null;
   return {
     id: existingId || body.id || 'j_' + crypto.randomBytes(6).toString('hex'),
-    name: body.name || 'Neuer Job',
+    name: body.name || 'New job',
     category: (body.category || '').trim(),
     notes: (body.notes || '').slice(0, 2000),
     archived: body.archived || false,
@@ -1155,16 +1171,16 @@ function normalizeJob(body, existingId) {
     smtpPort: Number(body.smtpPort) > 0 ? Number(body.smtpPort) : 587,
     smtpSicher: body.smtpSicher !== false,
     smtpBenutzer: (body.smtpBenutzer || '').trim(),
-    // Leeres Feld bedeutet „unverändert lassen", nicht „löschen"
+    // An empty field means “leave unchanged”, not “delete"
     smtpPasswort: body.smtpPasswort !== undefined && body.smtpPasswort !== ''
       ? body.smtpPasswort
       : (vorhanden ? vorhanden.smtpPasswort || '' : ''),
     mailVon: (body.mailVon || '').trim(),
     mailAn: (body.mailAn || '').trim(),
-    mailBetreff: body.mailBetreff !== undefined ? String(body.mailBetreff) : 'Neue Datei: {dateiname}',
+    mailBetreff: body.mailBetreff !== undefined ? String(body.mailBetreff) : 'New file: {filename}',
     maxVersuche: Number(body.maxVersuche) >= 0 ? Number(body.maxVersuche) : 5,
     wartezeitBasisSec: Number(body.wartezeitBasisSec) > 0 ? Number(body.wartezeitBasisSec) : 60,
-    quarantaeneSubfolder: (body.quarantaeneSubfolder || '_quarantaene').trim(),
+    quarantaeneSubfolder: (body.quarantaeneSubfolder || '_quarantine').trim(),
     targetUrl: body.targetUrl || '',
     extraTargetUrls: Array.isArray(body.extraTargetUrls) ? body.extraTargetUrls.filter((u) => u && u.trim()).map((u) => u.trim()) : [],
     processor: body.processor === 'pdf-qr-json' ? 'pdf-qr-json' : 'none',
@@ -1172,7 +1188,7 @@ function normalizeJob(body, existingId) {
     vorspannVerwerfen: body.vorspannVerwerfen || false,
     teilNamensmuster: body.teilNamensmuster !== undefined
       ? String(body.teilNamensmuster)
-      : '{stamm}_{nr}_{qrWert}',
+      : '{stem}_{no}_{qrValue}',
     qrSeite: Number(body.qrSeite) > 0 ? Number(body.qrSeite) : 1,
     qrDpi: Number(body.qrDpi) > 0 ? Number(body.qrDpi) : 200,
     sendeFormat: body.sendeFormat === 'multipart-metadata' ? 'multipart-metadata' : 'json',
@@ -1195,9 +1211,9 @@ function normalizeJob(body, existingId) {
     uploadMode: body.uploadMode || 'binary',
     multipartField: body.multipartField || 'file',
     onSuccess: body.onSuccess || 'archive',
-    archiveSubfolder: body.archiveSubfolder || '_gesendet',
+    archiveSubfolder: body.archiveSubfolder || '_sent',
     onError: body.onError || 'keep',
-    errorSubfolder: body.errorSubfolder || '_fehler',
+    errorSubfolder: body.errorSubfolder || '_error',
     timeoutSec: Number(body.timeoutSec) || 30,
     scheduleEnabled: body.scheduleEnabled || false,
     activeDays: Array.isArray(body.activeDays) && body.activeDays.length > 0 ? body.activeDays : ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'],
@@ -1207,6 +1223,10 @@ function normalizeJob(body, existingId) {
 }
 
 const WEEKDAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+// Marker for “no category” in status and statistics — the interface shows
+// a translated text for it.
+const NO_CATEGORY = '__uncategorized__';
 function isWithinSchedule(job, now) {
   if (!job.scheduleEnabled) return true;
   const dayCode = WEEKDAY_CODES[now.getDay()];
@@ -1215,17 +1235,18 @@ function isWithinSchedule(job, now) {
   const start = job.timeStart || '00:00';
   const end = job.timeEnd || '23:59';
   if (start <= end) return hhmm >= start && hhmm <= end;
-  return hhmm >= start || hhmm <= end; // Zeitfenster über Mitternacht hinweg
+  return hhmm >= start || hhmm <= end; // time window across midnight
 }
 
 const BETRACHTER_ERLAUBT = new Set(['/api/anmelden', '/api/abmelden']);
 
 async function handleApi(req, res, urlObj) {
   const parts = urlObj.pathname.split('/').filter(Boolean); // ['api','jobs', ...]
+  const T = i18n.forRequest(req);
 
-  // Betrachter: nur lesende Anfragen zulassen
+  // Viewer: only allow read requests
   if (req.method !== 'GET' && !BETRACHTER_ERLAUBT.has(urlObj.pathname) && istBetrachter(req)) {
-    return sendJson(res, 403, { error: 'Die Rolle „Betrachter“ darf nur ansehen, aber nichts ändern.' });
+    return sendJson(res, 403, { error: T('The “Viewer” role may only view, not change anything.') });
   }
 
   if (parts[1] === 'status' && req.method === 'GET') {
@@ -1251,7 +1272,7 @@ async function handleApi(req, res, urlObj) {
       else if (job.scheduleEnabled && !isWithinSchedule(job, now)) { state = 'outsideSchedule'; outsideSchedule += 1; }
       else { state = 'idle'; idle += 1; }
 
-      const cat = (job.category || '').trim() || 'Ohne Kategorie';
+      const cat = (job.category || '').trim() || NO_CATEGORY;
       if (!categoryMap.has(cat)) categoryMap.set(cat, { name: cat, total: 0, active: 0, failing: 0, paused: 0 });
       const c = categoryMap.get(cat);
       c.total += 1;
@@ -1266,9 +1287,9 @@ async function handleApi(req, res, urlObj) {
       activeJobCount: aktiveJobs.filter((j) => j.active).length,
       recentSuccessCount: successCount,
       recentErrorCount: errorCount,
-      warningCount: findConfigWarnings().length,
+      warningCount: findConfigWarnings(T).length,
       states: { running, failing, paused, outsideSchedule, idle },
-      categories: Array.from(categoryMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+      categories: Array.from(categoryMap.values()).sort((a, b) => a.name.localeCompare(b.name, T.locale)),
     });
   }
 
@@ -1283,23 +1304,23 @@ async function handleApi(req, res, urlObj) {
     const perJobMap = new Map();
     const perTargetMap = new Map();
     const perCategoryMap = new Map();
-    const jobCategoryById = new Map(config.jobs.map((j) => [j.id, (j.category || '').trim() || 'Ohne Kategorie']));
+    const jobCategoryById = new Map(config.jobs.map((j) => [j.id, (j.category || '').trim() || NO_CATEGORY]));
     const zielText = (j) => (j.zielTyp === 'ordner' ? (j.zielOrdner || '').trim()
-      : j.zielTyp === 'email' ? (j.mailAn ? 'E-Mail an ' + j.mailAn : '')
+      : j.zielTyp === 'email' ? (j.mailAn ? T('E-mail to {to}', { to: j.mailAn }) : '')
       : (j.targetUrl || '').trim());
     const jobUrlById = new Map(config.jobs.map((j) => [j.id, zielText(j)]));
     const jobUrlByName = new Map(config.jobs.map((j) => [j.name, zielText(j)]));
 
-    // Aeltere Eintraege enthalten teils keine Ziel-URL. Reihenfolge der Rueckfaelle:
-    // 1) URL im Eintrag  2) ueber Job-ID  3) ueber Job-Namen (Job neu angelegt)
-    // 4) sprechende Kennzeichnung mit Job-Namen, statt alles in einen Topf "unbekannt" zu werfen.
+    // Older entries sometimes contain no target URL. Order of fallbacks:
+    // 1) URL in the entry  2) via job ID  3) via job name (job re-created)
+    // 4) a descriptive label with the job name instead of lumping everything into "unknown".
     const targetKeyOf = (l) => {
       const raw = (l.targetUrl || '').trim()
         || jobUrlById.get(l.jobId)
         || jobUrlByName.get(l.jobName)
         || '';
       if (raw) return raw.replace(/\/+$/, '');
-      return l.jobName ? `– keine URL protokolliert (${l.jobName}) –` : '– keine URL protokolliert –';
+      return l.jobName ? T('– no URL logged ({job}) –', { job: l.jobName }) : T('– no URL logged –');
     };
     const perDayMap = new Map();
 
@@ -1308,8 +1329,8 @@ async function handleApi(req, res, urlObj) {
       if (l.status === 'success') totals.success += 1; else totals.error += 1;
       totals.bytes += l.fileSize || 0;
 
-      const jobKey = l.jobId || 'unbekannt';
-      if (!perJobMap.has(jobKey)) perJobMap.set(jobKey, { jobId: jobKey, jobName: l.jobName || 'Unbekannt', success: 0, error: 0, bytes: 0 });
+      const jobKey = l.jobId || 'unknown';
+      if (!perJobMap.has(jobKey)) perJobMap.set(jobKey, { jobId: jobKey, jobName: l.jobName || T('Unknown'), success: 0, error: 0, bytes: 0 });
       const jp = perJobMap.get(jobKey);
       if (l.status === 'success') jp.success += 1; else jp.error += 1;
       jp.bytes += l.fileSize || 0;
@@ -1321,7 +1342,7 @@ async function handleApi(req, res, urlObj) {
       if (l.status === 'success') tp.success += 1; else tp.error += 1;
       tp.bytes += l.fileSize || 0;
 
-      const catKey = jobCategoryById.get(l.jobId) || 'Ohne Kategorie';
+      const catKey = jobCategoryById.get(l.jobId) || NO_CATEGORY;
       if (!perCategoryMap.has(catKey)) perCategoryMap.set(catKey, { category: catKey, success: 0, error: 0, bytes: 0 });
       const cp = perCategoryMap.get(catKey);
       if (l.status === 'success') cp.success += 1; else cp.error += 1;
@@ -1335,7 +1356,7 @@ async function handleApi(req, res, urlObj) {
       dp.bytes += l.fileSize || 0;
     }
 
-    // Lückenlose Tagesreihe für den gewählten Zeitraum
+    // Gap-free series of days for the selected period
     const perDay = [];
     for (let i = rangeDays - 1; i >= 0; i -= 1) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
@@ -1346,9 +1367,9 @@ async function handleApi(req, res, urlObj) {
         : { date: key, success: 0, error: 0, bytes: 0, jobs: 0 });
     }
 
-    // Gleich langer, unmittelbar davorliegender Zeitraum — als Vergleichswert
-    // für die Trendpfeile bei den Kennzahlen. Nur die Summen werden gebraucht,
-    // keine Aufschlüsselung nach Job/Ziel/Tag.
+    // Period of the same length immediately before — as the comparison value
+    // for the trend arrows of the key figures. Only the totals are needed,
+    // no breakdown by job/target/day.
     const prevCutoffEnde = cutoff;
     const prevCutoffStart = cutoff - rangeDays * 24 * 60 * 60 * 1000;
     const previousTotals = { transfers: 0, success: 0, error: 0, bytes: 0 };
@@ -1377,7 +1398,7 @@ async function handleApi(req, res, urlObj) {
     const body = await readBody(req);
     const existing = body.jobId ? config.jobs.find((j) => j.id === body.jobId) : null;
     const targetUrl = (body.targetUrl || '').trim();
-    if (!targetUrl) return sendJson(res, 400, { error: 'Ziel-URL fehlt' });
+    if (!targetUrl) return sendJson(res, 400, { error: T('Target URL missing') });
 
     const testJob = {
       method: body.method || 'POST',
@@ -1393,13 +1414,13 @@ async function handleApi(req, res, urlObj) {
     };
 
     const tmpFile = path.join(require('os').tmpdir(), `fp-connection-test-${crypto.randomBytes(4).toString('hex')}.txt`);
-    fs.writeFileSync(tmpFile, 'Testübertragung von Folderpost\n');
+    fs.writeFileSync(tmpFile, 'Folderpost connection test\n');
     runCurl(testJob, tmpFile, (result) => {
-      try { fs.unlinkSync(tmpFile); } catch { /* egal */ }
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
       sendJson(res, 200, {
         ok: result.ok,
         httpStatus: result.httpStatus,
-        message: result.ok ? (result.bodySnippet || 'Erfolgreich, keine Antwort im Body') : (result.errorText || result.bodySnippet || 'Unbekannter Fehler'),
+        message: result.ok ? (result.bodySnippet || T('Successful, empty response body')) : (result.errorText || result.bodySnippet || T('Unknown error')),
       });
     });
     return;
@@ -1413,7 +1434,7 @@ async function handleApi(req, res, urlObj) {
       limit: q.get('limit') ? Number(q.get('limit')) : 2000,
       q: q.get('q') || undefined,
     });
-    const rows = [['Zeitstempel', 'Job', 'Datei', 'Groesse (Bytes)', 'Status', 'HTTP-Status', 'Meldung']];
+    const rows = [[T('Timestamp'), 'Job', T('File'), T('Size (bytes)'), 'Status', T('HTTP status'), T('Message')]];
     logs.forEach((l) => rows.push([l.ts, l.jobName, l.file || '', l.fileSize ?? '', l.status, l.httpStatus || '', l.message || '']));
     return sendCsv(res, 'transfer-log.csv', rows);
   }
@@ -1429,14 +1450,14 @@ async function handleApi(req, res, urlObj) {
     const jobUrlByNameCsv = new Map(config.jobs.map((j) => [j.name, (j.targetUrl || '').trim()]));
     inRange.forEach((l) => {
       const raw = (l.targetUrl || '').trim() || jobUrlByIdCsv.get(l.jobId) || jobUrlByNameCsv.get(l.jobName) || '';
-      const key = raw ? raw.replace(/\/+$/, '') : (l.jobName ? `– keine URL protokolliert (${l.jobName}) –` : '– keine URL protokolliert –');
+      const key = raw ? raw.replace(/\/+$/, '') : (l.jobName ? T('– no URL logged ({job}) –', { job: l.jobName }) : T('– no URL logged –'));
       if (!perTargetMap.has(key)) perTargetMap.set(key, { targetUrl: key, jobNames: new Set(), success: 0, error: 0, bytes: 0 });
       const tp = perTargetMap.get(key);
       if (l.jobName) tp.jobNames.add(l.jobName);
       if (l.status === 'success') tp.success += 1; else tp.error += 1;
       tp.bytes += l.fileSize || 0;
     });
-    const rows = [['Job', 'Schnittstelle', 'Erfolg', 'Fehler', 'Gesamt', 'Datenvolumen (Bytes)']];
+    const rows = [['Job', T('API endpoint'), T('Success'), T('Errors'), T('Total'), T('Data volume (bytes)')]];
     Array.from(perTargetMap.values()).forEach((t) => rows.push([Array.from(t.jobNames).join(', '), t.targetUrl, t.success, t.error, t.success + t.error, t.bytes]));
     return sendCsv(res, `statistics-${rangeDays}-days.csv`, rows);
   }
@@ -1457,10 +1478,10 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'config' && parts[2] === 'import' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const incomingJobs = Array.isArray(body.jobs) ? body.jobs : null;
-    if (!incomingJobs) return sendJson(res, 400, { error: 'Ungültiges Format: "jobs"-Array fehlt' });
+    if (!incomingJobs) return sendJson(res, 400, { error: T('Invalid format: "jobs" array missing') });
 
     if (body.replace) {
       config.jobs.forEach((j) => delete jobRuntime[j.id]);
@@ -1479,7 +1500,7 @@ async function handleApi(req, res, urlObj) {
         config.jobs.push(normalized);
         added += 1;
       }
-      delete jobRuntime[normalized.id]; // frischer Laufzeitstatus nach Import
+      delete jobRuntime[normalized.id]; // fresh runtime status after import
     });
     saveConfig(config);
     return sendJson(res, 200, { ok: true, added, updated, total: config.jobs.length });
@@ -1488,7 +1509,7 @@ async function handleApi(req, res, urlObj) {
   if (parts[1] === 'preview-files' && req.method === 'POST') {
     const body = await readBody(req);
     const sourcePath = (body.sourcePath || '').trim();
-    if (!sourcePath) return sendJson(res, 400, { error: 'Quell-Ordner fehlt' });
+    if (!sourcePath) return sendJson(res, 400, { error: T('Source folder missing') });
     let scan;
     try {
       scan = listMatchingFiles(sourcePath, body.filePattern || '*', {
@@ -1500,7 +1521,7 @@ async function handleApi(req, res, urlObj) {
     }
     const withSize = scan.accepted.slice(0, 25).map((p) => {
       let size = null;
-      try { size = fs.statSync(p).size; } catch { /* egal */ }
+      try { size = fs.statSync(p).size; } catch { /* ignore */ }
       return { name: path.basename(p), size };
     });
     return sendJson(res, 200, {
@@ -1512,7 +1533,7 @@ async function handleApi(req, res, urlObj) {
     });
   }
 
-  // Probelauf für einen noch nicht gespeicherten Job-Entwurf
+  // Trial run for a job draft that has not been saved yet
   if (parts[1] === 'namen-vorschau' && req.method === 'POST') {
     const body = await readBody(req);
     const entwurf = { teilNamensmuster: body.teilNamensmuster };
@@ -1523,18 +1544,18 @@ async function handleApi(req, res, urlObj) {
       { qrWert: null, seiten: 1 },
     ];
     const namen = beispiele.map((d, i) => baueTeilNamen(entwurf, stamm, i + 1, beispiele.length, d, 'x.pdf'));
-    return sendJson(res, 200, { namen, muster: entwurf.teilNamensmuster || '{stamm}_{nr}_{qrWert}' });
+    return sendJson(res, 200, { namen, muster: entwurf.teilNamensmuster || '{stem}_{no}_{qrValue}' });
   }
 
   if (parts[1] === 'entwurf-vorschau' && req.method === 'POST') {
     const body = await readBody(req);
     const entwurf = normalizeJob(body, 'entwurf');
-    if (!entwurf.sourcePath) return sendJson(res, 400, { error: 'Quell-Ordner fehlt' });
+    if (!entwurf.sourcePath) return sendJson(res, 400, { error: T('Source folder missing') });
 
     let scan;
     try {
       scan = listMatchingFiles(entwurf.sourcePath, entwurf.filePattern, {
-        minFileAgeSec: 0, // für die Vorschau keine Ruhezeit abwarten
+        minFileAgeSec: 0, // do not wait for the settle time in the preview
         maxFileSizeMB: entwurf.maxFileSizeMB,
       });
     } catch (err) {
@@ -1543,16 +1564,16 @@ async function handleApi(req, res, urlObj) {
 
     const gewuenscht = body.datei ? path.basename(body.datei) : null;
     const kandidaten = scan.accepted.slice();
-    // Auch bereits verschobene Dateien zulassen, damit sich ein Job auch
-    // nach dem ersten Lauf noch bequem prüfen lässt
+    // Also allow files that have already been moved, so that a job can
+    // still be checked conveniently after the first run
     [entwurf.archiveSubfolder, entwurf.errorSubfolder].forEach((unter) => {
       try {
         const dir = path.join(entwurf.sourcePath, unter);
         fs.readdirSync(dir).forEach((f) => {
           const voll = path.join(dir, f);
-          try { if (fs.statSync(voll).isFile()) kandidaten.push(voll); } catch { /* egal */ }
+          try { if (fs.statSync(voll).isFile()) kandidaten.push(voll); } catch { /* ignore */ }
         });
-      } catch { /* Ordner gibt es noch nicht */ }
+      } catch { /* folder does not exist yet */ }
     });
 
     const datei = gewuenscht
@@ -1563,8 +1584,8 @@ async function handleApi(req, res, urlObj) {
       return sendJson(res, 200, {
         ok: false,
         meldung: scan.accepted.length === 0 && kandidaten.length === 0
-          ? `Im Ordner "${entwurf.sourcePath}" passt derzeit keine Datei auf den Filter "${entwurf.filePattern}".`
-          : 'Die gewünschte Datei wurde nicht gefunden.',
+          ? T('No file in the folder "{path}" currently matches the filter "{filter}".', { path: entwurf.sourcePath, filter: entwurf.filePattern })
+          : T('The requested file was not found.'),
         wartend: scan.tooYoung.length,
         zuGross: scan.tooLarge.length,
       });
@@ -1586,7 +1607,7 @@ async function handleApi(req, res, urlObj) {
       return sendJson(res, 200, {
         ...gemeinsam,
         modus: 'roh',
-        hinweis: 'Ohne Verarbeitung wird die Datei unverändert gesendet.',
+        hinweis: T('Without processing, the file is sent unchanged.'),
         curl: `curl -X ${entwurf.method || 'POST'} --data-binary @${dateiName} ${entwurf.targetUrl}`,
       });
     }
@@ -1595,24 +1616,24 @@ async function handleApi(req, res, urlObj) {
       if (fehler) return sendJson(res, 200, { ...gemeinsam, ok: false, meldung: fehler });
       const pfad = sendung.modus === 'multipart' ? sendung.metaPfad : sendung.sendePfad;
       let inhalt = '';
-      try { inhalt = fs.readFileSync(pfad, 'utf8'); } catch { /* egal */ }
-      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* egal */ } } });
+      try { inhalt = fs.readFileSync(pfad, 'utf8'); } catch { /* ignore */ }
+      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* ignore */ } } });
       try {
         const tmp = require('os').tmpdir();
         const stamm = path.basename(pfad).split('.')[0];
         if (stamm.startsWith('fp-')) {
           fs.readdirSync(tmp).filter((f) => f.startsWith(stamm)).forEach((f) => {
-            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* egal */ }
+            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* ignore */ }
           });
         }
-      } catch { /* egal */ }
+      } catch { /* ignore */ }
 
       let anzeige = inhalt;
       let istJson = true;
       let jsonFehler = null;
       try {
         const obj = JSON.parse(inhalt);
-        if (obj.dateiInhaltBase64) obj.dateiInhaltBase64 = `«${obj.dateiInhaltBase64.length} Zeichen Base64»`;
+        if (obj.dateiInhaltBase64) obj.dateiInhaltBase64 = T('«{count} characters of Base64»', { count: obj.dateiInhaltBase64.length });
         anzeige = JSON.stringify(obj, null, 2);
       } catch (e) { istJson = false; jsonFehler = e.message; }
 
@@ -1636,17 +1657,17 @@ async function handleApi(req, res, urlObj) {
     const job = config.jobs.find((j) => j.id === q.get('jobId'));
     const fileName = path.basename(q.get('file') || '');
     const vollstaendig = q.get('voll') === '1';
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
-    if (!fileName) return sendJson(res, 400, { error: 'Dateiname fehlt' });
-    if (job.processor !== 'pdf-qr-json') return sendJson(res, 400, { error: 'Für diesen Job wird keine JSON erzeugt' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
+    if (!fileName) return sendJson(res, 400, { error: T('File name missing') });
+    if (job.processor !== 'pdf-qr-json') return sendJson(res, 400, { error: T('This job does not create JSON') });
 
     const kandidaten = [
       path.join(job.sourcePath, fileName),
-      path.join(job.sourcePath, job.errorSubfolder || '_fehler', fileName),
-      path.join(job.sourcePath, job.archiveSubfolder || '_gesendet', fileName),
+      path.join(job.sourcePath, job.errorSubfolder || '_error', fileName),
+      path.join(job.sourcePath, job.archiveSubfolder || '_sent', fileName),
     ];
     const gefunden = kandidaten.find((p2) => { try { return fs.statSync(p2).isFile(); } catch { return false; } });
-    if (!gefunden) return sendJson(res, 404, { error: 'Datei nicht auffindbar' });
+    if (!gefunden) return sendJson(res, 404, { error: T('File not found') });
 
     return verarbeitung.pdfZuJson(job, gefunden, config.settings, (fehler, sendung, info) => {
       if (fehler) return sendJson(res, 500, { error: fehler });
@@ -1654,33 +1675,33 @@ async function handleApi(req, res, urlObj) {
       let inhalt = '';
       try { inhalt = fs.readFileSync(pfad, 'utf8'); } catch (e) { return sendJson(res, 500, { error: e.message }); }
 
-      // Aufraeumen — es wird nichts gesendet
-      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* egal */ } } });
+      // Clean up — nothing is sent
+      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* ignore */ } } });
       try {
         const tmp = require('os').tmpdir();
         const stamm = path.basename(pfad).split('.')[0];
         if (stamm.startsWith('fp-')) {
           fs.readdirSync(tmp).filter((f) => f.startsWith(stamm)).forEach((f) => {
-            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* egal */ }
+            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* ignore */ }
           });
         }
-      } catch { /* egal */ }
+      } catch { /* ignore */ }
 
-      // Ohne "voll" das eingebettete PDF kuerzen, damit die Datei handlich bleibt
+      // Without "voll", shorten the embedded PDF so that the file stays manageable
       let ausgabe = inhalt;
       if (!vollstaendig && sendung.modus === 'json') {
         try {
           const obj = JSON.parse(inhalt);
           if (obj.dateiInhaltBase64) {
-            obj.dateiInhaltBase64 = `«gekürzt: ${obj.dateiInhaltBase64.length} Zeichen Base64»`;
+            obj.dateiInhaltBase64 = T('«shortened: {count} characters of Base64»', { count: obj.dateiInhaltBase64.length });
           }
           ausgabe = JSON.stringify(obj, null, 2);
-        } catch { /* Rohinhalt behalten */ }
+        } catch { /* keep the raw content */ }
       } else {
-        try { ausgabe = JSON.stringify(JSON.parse(inhalt), null, 2); } catch { /* Rohinhalt behalten */ }
+        try { ausgabe = JSON.stringify(JSON.parse(inhalt), null, 2); } catch { /* keep the raw content */ }
       }
 
-      const zielName = fileName.replace(/\.[^.]+$/, '') + (vollstaendig ? '-vollstaendig' : '') + '.json';
+      const zielName = fileName.replace(/\.[^.]+$/, '') + (vollstaendig ? '-full' : '') + '.json';
       const puffer = Buffer.from(ausgabe, 'utf8');
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -1694,22 +1715,22 @@ async function handleApi(req, res, urlObj) {
   if (parts[1] === 'sendevorschau' && req.method === 'POST') {
     const body = await readBody(req);
     const job = config.jobs.find((j) => j.id === body.jobId);
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const fileName = path.basename(body.file || '');
-    if (!fileName) return sendJson(res, 400, { error: 'Dateiname fehlt' });
+    if (!fileName) return sendJson(res, 400, { error: T('File name missing') });
 
     const kandidaten = [
       path.join(job.sourcePath, fileName),
-      path.join(job.sourcePath, job.errorSubfolder || '_fehler', fileName),
-      path.join(job.sourcePath, job.archiveSubfolder || '_gesendet', fileName),
+      path.join(job.sourcePath, job.errorSubfolder || '_error', fileName),
+      path.join(job.sourcePath, job.archiveSubfolder || '_sent', fileName),
     ];
     const gefunden = kandidaten.find((p2) => { try { return fs.statSync(p2).isFile(); } catch { return false; } });
-    if (!gefunden) return sendJson(res, 404, { error: 'Datei nicht auffindbar (evtl. verschoben oder gelöscht)' });
+    if (!gefunden) return sendJson(res, 404, { error: T('File not found (it may have been moved or deleted)') });
 
     if (job.processor !== 'pdf-qr-json') {
       return sendJson(res, 200, {
         modus: 'roh',
-        hinweis: 'Für diesen Job ist keine Verarbeitung eingestellt — die Datei wird unverändert gesendet.',
+        hinweis: T('No processing is configured for this job — the file is sent unchanged.'),
         curl: ['curl', '-X', job.method || 'POST', '--data-binary', `@${gefunden}`, job.targetUrl].join(' '),
       });
     }
@@ -1722,20 +1743,20 @@ async function handleApi(req, res, urlObj) {
         const pfad = sendung.modus === 'multipart' ? sendung.metaPfad : sendung.sendePfad;
         inhalt = fs.readFileSync(pfad, 'utf8');
         groesse = fs.statSync(pfad).size;
-      } catch { /* egal */ }
-      // Temporaerdateien wieder entfernen — hier wird nichts gesendet.
-      // Auch die extrahierte Bilddatei, falls sie im Temp-Ordner liegt.
-      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* egal */ } } });
+      } catch { /* ignore */ }
+      // Remove temporary files again — nothing is sent here.
+      // Also the extracted image file, if it is in the temp folder.
+      [sendung.metaPfad, sendung.sendePfad].forEach((f) => { if (f) { try { fs.unlinkSync(f); } catch { /* ignore */ } } });
       try {
         const tmp = require('os').tmpdir();
         const bezug = sendung.metaPfad || sendung.sendePfad || '';
         const stamm = path.basename(bezug).split('.')[0];
         if (stamm.startsWith('fp-')) {
           fs.readdirSync(tmp).filter((f) => f.startsWith(stamm)).forEach((f) => {
-            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* egal */ }
+            try { fs.unlinkSync(path.join(tmp, f)); } catch { /* ignore */ }
           });
         }
-      } catch { /* egal */ }
+      } catch { /* ignore */ }
 
       let gekuerzt = inhalt;
       let istJson = true;
@@ -1743,7 +1764,7 @@ async function handleApi(req, res, urlObj) {
       if (sendung.modus === 'json' && inhalt) {
         try {
           const obj = JSON.parse(inhalt);
-          if (obj.dateiInhaltBase64) obj.dateiInhaltBase64 = `«${obj.dateiInhaltBase64.length} Zeichen Base64»`;
+          if (obj.dateiInhaltBase64) obj.dateiInhaltBase64 = T('«{count} characters of Base64»', { count: obj.dateiInhaltBase64.length });
           gekuerzt = JSON.stringify(obj, null, 2);
         } catch (e) { istJson = false; jsonFehler = e.message; }
       } else if (inhalt) {
@@ -1755,8 +1776,8 @@ async function handleApi(req, res, urlObj) {
         metadaten: job.metadataFeldName || 'metadata1',
       };
       const curl = sendung.modus === 'multipart'
-        ? `curl -X ${job.method || 'POST'} -F "${felder.datei}=@${fileName};type=application/pdf" -F "${felder.metadaten}=<metadaten.json" ${job.targetUrl}`
-        : `curl -X ${job.method || 'POST'} -H "Content-Type: application/json" --data-binary @nachricht.json ${job.targetUrl}`;
+        ? `curl -X ${job.method || 'POST'} -F "${felder.datei}=@${fileName};type=application/pdf" -F "${felder.metadaten}=<metadata.json" ${job.targetUrl}`
+        : `curl -X ${job.method || 'POST'} -H "Content-Type: application/json" --data-binary @message.json ${job.targetUrl}`;
 
       const textInfo = verarbeitung.analysiereText(gefunden);
       const bildInfo = verarbeitung.analysiereBilder(gefunden);
@@ -1795,7 +1816,7 @@ async function handleApi(req, res, urlObj) {
       unixzeit: Math.floor(jetzt.getTime() / 1000),
       isozeit: jetzt.toISOString(),
       groesseBytes: 146990,
-      jobName: body.name || 'Beispiel-Job',
+      jobName: body.name || T('Example job'),
       festwert: (body.auftragsnummer || '').trim() || null,
       auftragsnummer: (body.auftragsnummer || '').trim() || null,
       ...verarbeitung.gruppenAusDateiname(dateiname, body.dateinameRegex),
@@ -1804,7 +1825,7 @@ async function handleApi(req, res, urlObj) {
     let gueltig = true;
     let fehler = null;
     try { JSON.parse(text); } catch (e) { gueltig = false; fehler = e.message; }
-    return sendJson(res, 200, { text, gueltig, fehler, verfuegbareWerte: Object.keys(werte) });
+    return sendJson(res, 200, { text, gueltig, fehler, verfuegbareWerte: Object.keys(verarbeitung.mitEnglischenNamen(werte)) });
   }
 
   if (parts[1] === 'pdf-werkzeuge' && req.method === 'GET') {
@@ -1813,14 +1834,14 @@ async function handleApi(req, res, urlObj) {
     });
   }
 
-  // --- Öffentlich erreichbar: Kurzstatus für den Anmeldebildschirm ---
+  // --- Publicly reachable: short status for the sign-in screen ---
   if (parts[1] === 'oeffentlicher-status' && req.method === 'GET') {
     const aktiveJobs = config.jobs.filter((j) => !j.archived);
     const logs = readLogs({ limit: 400 });
     const grenze = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const jung = logs.filter((l) => new Date(l.ts).getTime() >= grenze);
-    // Kurzübersicht je Job — nur wenn ausdrücklich freigegeben, denn sie ist
-    // ohne Anmeldung sichtbar.
+    // Short overview per job — only if explicitly enabled, because it is
+    // visible without signing in.
     const zeigeJobs = config.settings.jobUebersichtImLogin !== false;
     const jetzt = new Date();
     const jobUebersicht = !zeigeJobs ? null : aktiveJobs.map((job) => {
@@ -1867,13 +1888,13 @@ async function handleApi(req, res, urlObj) {
     const body = await readBody(req);
     const kennung = String(body.name || '').toLowerCase().slice(0, 60);
 
-    // Nach mehreren Fehlversuchen kurz sperren, damit Passwörter nicht
-    // maschinell durchprobiert werden können.
+    // Lock briefly after several failed attempts so that passwords cannot
+    // be tried automatically.
     const sperre = anmeldeSperren.get(kennung);
     if (sperre && sperre.bis > Date.now()) {
       const sekunden = Math.ceil((sperre.bis - Date.now()) / 1000);
       return sendJson(res, 429, {
-        error: `Zu viele Fehlversuche. Bitte ${sekunden} Sekunden warten.`,
+        error: T('Too many failed attempts. Please wait {seconds} seconds.', { seconds: sekunden }),
       });
     }
 
@@ -1885,7 +1906,7 @@ async function handleApi(req, res, urlObj) {
       if (benutzer.verfahren === 'pbkdf2') {
         stimmt = gleichSicher(hashPasswort(eingabe, benutzer.salt), benutzer.hash);
       } else {
-        // Altbestand im früheren Verfahren
+        // existing hash in the earlier scheme
         stimmt = gleichSicher(hashPasswortAlt(eingabe, benutzer.salt), benutzer.hash);
         umstellen = stimmt;
       }
@@ -1895,7 +1916,7 @@ async function handleApi(req, res, urlObj) {
       const stand = anmeldeSperren.get(kennung) || { fehlversuche: 0, bis: 0 };
       stand.fehlversuche += 1;
       if (stand.fehlversuche >= 5) {
-        // Wartezeit wächst: 30s, 60s, 120s … höchstens 15 Minuten
+        // Waiting time grows: 30s, 60s, 120s … at most 15 minutes
         const warten = Math.min(30000 * Math.pow(2, stand.fehlversuche - 5), 900000);
         stand.bis = Date.now() + warten;
       }
@@ -1903,12 +1924,12 @@ async function handleApi(req, res, urlObj) {
       appendAudit('anmeldung.fehlgeschlagen', {
         benutzer: String(body.name || '').slice(0, 40), versuch: stand.fehlversuche,
       });
-      return sendJson(res, 401, { error: 'Benutzername oder Passwort stimmt nicht.' });
+      return sendJson(res, 401, { error: T('User name or password is incorrect.') });
     }
 
     anmeldeSperren.delete(kennung);
 
-    // Still auf das stärkere Verfahren umstellen
+    // Silently upgrade to the stronger scheme
     if (umstellen) {
       benutzer.hash = hashPasswort(String(body.passwort || ''), benutzer.salt);
       benutzer.verfahren = 'pbkdf2';
@@ -1950,7 +1971,7 @@ async function handleApi(req, res, urlObj) {
     });
   }
 
-  // --- Benutzerverwaltung ---
+  // --- User management ---
   if (parts[1] === 'benutzer' && parts.length === 2 && req.method === 'GET') {
     return sendJson(res, 200, benutzerListe().map((b) => ({
       id: b.id, name: b.name, anzeigename: b.anzeigename || b.name, rolle: b.rolle || 'benutzer',
@@ -1958,12 +1979,12 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'benutzer' && parts.length === 2 && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const name = String(body.name || '').trim();
-    if (!name) return sendJson(res, 400, { error: 'Benutzername fehlt' });
-    if (!body.passwort || String(body.passwort).length < 4) return sendJson(res, 400, { error: 'Passwort muss mindestens 4 Zeichen haben' });
-    if (findeBenutzer(name)) return sendJson(res, 400, { error: 'Benutzername ist bereits vergeben' });
+    if (!name) return sendJson(res, 400, { error: T('User name missing') });
+    if (!body.passwort || String(body.passwort).length < 4) return sendJson(res, 400, { error: T('The password must have at least 4 characters') });
+    if (findeBenutzer(name)) return sendJson(res, 400, { error: T('This user name is already taken') });
     const salt = crypto.randomBytes(8).toString('hex');
     const neu = {
       id: 'u_' + crypto.randomBytes(5).toString('hex'),
@@ -1981,11 +2002,11 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'benutzer' && parts[2] && req.method === 'DELETE') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const ziel = benutzerListe().find((b) => b.id === parts[2]);
-    if (!ziel) return sendJson(res, 404, { error: 'Benutzer nicht gefunden' });
+    if (!ziel) return sendJson(res, 404, { error: T('User not found') });
     config.settings.benutzer = benutzerListe().filter((b) => b.id !== parts[2]);
-    // Laufende Sitzungen dieses Benutzers beenden
+    // End the running sessions of this user
     for (const [tok, sit] of sitzungen) if (sit.benutzerId === ziel.id) sitzungen.delete(tok);
     saveConfig(config);
     appendAudit('benutzer.loeschen', { benutzer: benutzerName(req), betroffen: ziel.anzeigename || ziel.name });
@@ -1993,11 +2014,11 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'benutzer' && parts[2] && parts[3] === 'passwort' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const ziel = benutzerListe().find((b) => b.id === parts[2]);
-    if (!ziel) return sendJson(res, 404, { error: 'Benutzer nicht gefunden' });
-    if (!body.passwort || String(body.passwort).length < 4) return sendJson(res, 400, { error: 'Passwort muss mindestens 4 Zeichen haben' });
+    if (!ziel) return sendJson(res, 404, { error: T('User not found') });
+    if (!body.passwort || String(body.passwort).length < 4) return sendJson(res, 400, { error: T('The password must have at least 4 characters') });
     ziel.salt = crypto.randomBytes(8).toString('hex');
     ziel.hash = hashPasswort(body.passwort, ziel.salt);
     ziel.verfahren = 'pbkdf2';
@@ -2006,12 +2027,12 @@ async function handleApi(req, res, urlObj) {
     return sendJson(res, 200, { ok: true });
   }
 
-  // --- Programmstand ---
+  // --- Version ---
   if (parts[1] === 'info' && req.method === 'GET') {
     return sendJson(res, 200, { version: VERSION, baustand: BAUSTAND });
   }
 
-  // --- Erscheinungsbild ---
+  // --- Appearance ---
   if (parts[1] === 'erscheinungsbild' && req.method === 'GET') {
     return sendJson(res, 200, {
       logoDatenUrl: config.settings.logoDatenUrl || '',
@@ -2023,22 +2044,22 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'erscheinungsbild' && req.method === 'PUT') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
 
     if (body.logoDatenUrl !== undefined) {
       const wert = String(body.logoDatenUrl || '');
       if (wert && !/^data:image\/(png|jpeg|svg\+xml|webp);base64,/.test(wert)) {
-        return sendJson(res, 400, { error: 'Nur PNG, JPEG, SVG oder WebP werden unterstützt.' });
+        return sendJson(res, 400, { error: T('Only PNG, JPEG, SVG or WebP are supported.') });
       }
       if (wert.length > 400000) {
-        return sendJson(res, 400, { error: 'Das Logo ist zu groß (höchstens etwa 300 KB). Bitte kleiner speichern.' });
+        return sendJson(res, 400, { error: T('The logo is too large (about 300 KB at most). Please save a smaller version.') });
       }
       config.settings.logoDatenUrl = wert;
     }
     if (body.akzentFarbe !== undefined) {
       const f = String(body.akzentFarbe || '').trim();
-      if (f && !/^#[0-9a-fA-F]{6}$/.test(f)) return sendJson(res, 400, { error: 'Farbe bitte als Hex-Wert angeben, z. B. #2E6BB8.' });
+      if (f && !/^#[0-9a-fA-F]{6}$/.test(f)) return sendJson(res, 400, { error: T('Please enter the colour as a hex value, e.g. #2E6BB8.') });
       config.settings.akzentFarbe = f;
     }
     if (body.anzeigeName !== undefined) config.settings.anzeigeName = String(body.anzeigeName || '').trim();
@@ -2058,11 +2079,11 @@ async function handleApi(req, res, urlObj) {
     return sendJson(res, 200, erkenneBetriebsart());
   }
 
-  // --- Aktualisierung durch Hochladen eines Pakets ---
+  // --- Update by uploading a package ---
   if (parts[1] === 'update' && parts[2] === 'einspielen' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
 
-    // Rohdaten einlesen (ZIP)
+    // Read raw data (ZIP)
     const stuecke = [];
     let groesse = 0;
     let zuGross = false;
@@ -2075,10 +2096,10 @@ async function handleApi(req, res, urlObj) {
       req.on('end', fertig);
       req.on('error', fertig);
     });
-    if (zuGross) return sendJson(res, 400, { error: 'Das Paket ist größer als 80 MB.' });
+    if (zuGross) return sendJson(res, 400, { error: T('The package is larger than 80 MB.') });
     const paket = Buffer.concat(stuecke);
     if (paket.length < 100 || paket[0] !== 0x50 || paket[1] !== 0x4B) {
-      return sendJson(res, 400, { error: 'Das ist keine ZIP-Datei.' });
+      return sendJson(res, 400, { error: T('This is not a ZIP file.') });
     }
 
     try {
@@ -2089,18 +2110,18 @@ async function handleApi(req, res, urlObj) {
           aufVersion: info.neueVersion,
           dateien: info.dateien,
         });
-      });
+      }, T);
       const art = erkenneBetriebsart();
       sendJson(res, 200, {
         ...ergebnis,
         neustartVerhalten: art.eingestellt,
         hinweis: art.eingestellt === 'beenden'
-          ? 'Die Anwendung beendet sich jetzt. Windows startet sie über die Aufgabe bzw. den Dienst neu — das kann bis zu einer Minute dauern.'
-          : 'Die Anwendung startet gleich neu. Konfiguration, Protokolle und Benutzer bleiben erhalten.',
+          ? T('The application is shutting down now. The scheduled task or service restarts it — this can take up to a minute.')
+          : T('The application will restart shortly. Configuration, logs and users are kept.'),
       });
-      // Neustart erst nach der Antwort, damit die Oberfläche sie noch erhält
+      // Restart only after the response so that the interface still receives it
       setTimeout(() => {
-        console.log('Aktualisierung eingespielt — Anwendung wird neu gestartet.');
+        console.log('Update installed — restarting the application.');
         starteNeu();
       }, 800);
     } catch (e) {
@@ -2109,15 +2130,15 @@ async function handleApi(req, res, urlObj) {
     return undefined;
   }
 
-  // --- Aktualisierung ---
+  // --- Update ---
   if (parts[1] === 'update' && parts[2] === 'pruefen' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const quelle = (config.settings.updatePruefUrl || '').trim();
     if (!quelle) {
       return sendJson(res, 200, {
         ok: false,
         aktuelleVersion: VERSION,
-        meldung: 'Keine Prüf-Adresse hinterlegt. Unter Einstellungen eine URL eintragen, die eine Datei im Format {"version":"1.3.0","hinweis":"…","download":"https://…"} ausliefert.',
+        meldung: T('No check URL configured. Enter a URL in the settings that returns a file in the format {format}.', { format: '{"version":"1.3.0","hinweis":"…","download":"https://…"}' }),
       });
     }
     const geladen = await new Promise((resolve) => {
@@ -2128,7 +2149,7 @@ async function handleApi(req, res, urlObj) {
           antwort.on('data', (c) => { text += c; if (text.length > 200000) antwort.destroy(); });
           antwort.on('end', () => resolve({ ok: true, text, status: antwort.statusCode }));
         });
-        anfrage.on('timeout', () => { anfrage.destroy(); resolve({ ok: false, fehler: 'Zeitüberschreitung' }); });
+        anfrage.on('timeout', () => { anfrage.destroy(); resolve({ ok: false, fehler: T('Timeout') }); });
         anfrage.on('error', (e) => resolve({ ok: false, fehler: e.message }));
       } catch (e) { resolve({ ok: false, fehler: e.message }); }
     });
@@ -2136,9 +2157,9 @@ async function handleApi(req, res, urlObj) {
     config.settings.letzteUpdatePruefung = new Date().toISOString();
     saveConfig(config);
 
-    if (!geladen.ok) return sendJson(res, 200, { ok: false, aktuelleVersion: VERSION, meldung: `Prüfung nicht möglich: ${geladen.fehler}` });
+    if (!geladen.ok) return sendJson(res, 200, { ok: false, aktuelleVersion: VERSION, meldung: T('Check not possible: {error}', { error: geladen.fehler }) });
     let info;
-    try { info = JSON.parse(geladen.text); } catch { return sendJson(res, 200, { ok: false, aktuelleVersion: VERSION, meldung: 'Antwort war kein gültiges JSON.' }); }
+    try { info = JSON.parse(geladen.text); } catch { return sendJson(res, 200, { ok: false, aktuelleVersion: VERSION, meldung: T('The response was not valid JSON.') }); }
 
     const neuer = versionVergleich(String(info.version || ''), VERSION) > 0;
     return sendJson(res, 200, {
@@ -2146,7 +2167,7 @@ async function handleApi(req, res, urlObj) {
       aktuelleVersion: VERSION,
       verfuegbareVersion: info.version || null,
       aktualisierungVerfuegbar: neuer,
-      hinweis: info.hinweis || null,
+      hinweis: info.note || info.hinweis || null,
       download: info.download || null,
       geprueftAm: config.settings.letzteUpdatePruefung,
     });
@@ -2154,7 +2175,7 @@ async function handleApi(req, res, urlObj) {
 
   if (parts[1] === 'warteschlange' && req.method === 'GET') {
     const job = config.jobs.find((j) => j.id === urlObj.searchParams.get('jobId'));
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const rt = ensureRuntime(job);
 
     let scan;
@@ -2168,7 +2189,7 @@ async function handleApi(req, res, urlObj) {
 
     const info = (voll) => {
       let groesse = null; let geaendert = null;
-      try { const st = fs.statSync(voll); groesse = st.size; geaendert = st.mtimeMs; } catch { /* egal */ }
+      try { const st = fs.statSync(voll); groesse = st.size; geaendert = st.mtimeMs; } catch { /* ignore */ }
       return { name: path.basename(voll), groesse, geaendert };
     };
 
@@ -2207,24 +2228,24 @@ async function handleApi(req, res, urlObj) {
       wartetAufRuhezeit: scan.tooYoung.map((n) => ({ name: n })),
       wartetAufWiederholung,
       zuGross: scan.tooLarge.map((f) => ({ name: f.name, groesse: f.size })),
-      quarantaene: ordnerInhalt(job.quarantaeneSubfolder || '_quarantaene'),
-      fehlerordner: ordnerInhalt(job.errorSubfolder || '_fehler'),
+      quarantaene: ordnerInhalt(job.quarantaeneSubfolder || '_quarantine'),
+      fehlerordner: ordnerInhalt(job.errorSubfolder || '_error'),
       ruhezeitSek: job.minFileAgeSec || 0,
       maxVersuche: job.maxVersuche || 0,
     });
   }
 
-  // --- Datei aus Quarantäne zurückholen ---
+  // --- Restore a file from quarantine ---
   if (parts[1] === 'quarantaene' && parts[2] === 'zurueck' && req.method === 'POST') {
     const body = await readBody(req);
     const job = config.jobs.find((j) => j.id === body.jobId);
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const name = path.basename(body.file || '');
-    const quelle = path.join(job.sourcePath, job.quarantaeneSubfolder || '_quarantaene', name);
+    const quelle = path.join(job.sourcePath, job.quarantaeneSubfolder || '_quarantine', name);
     const ziel = path.join(job.sourcePath, name);
     try {
-      if (!fs.existsSync(quelle)) return sendJson(res, 404, { error: 'Datei nicht in der Quarantäne gefunden' });
-      if (fs.existsSync(ziel)) return sendJson(res, 400, { error: 'Im Quell-Ordner liegt bereits eine Datei dieses Namens' });
+      if (!fs.existsSync(quelle)) return sendJson(res, 404, { error: T('File not found in quarantine') });
+      if (fs.existsSync(ziel)) return sendJson(res, 400, { error: T('A file with this name already exists in the source folder') });
       fs.renameSync(quelle, ziel);
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
@@ -2236,9 +2257,9 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'selfcheck' && req.method === 'GET') {
-    // Die QR-Auswertung läuft im Programm selbst — Poppler und ZBar sind
-    // nur noch optionale Rückfallwege und deshalb kein Grund für eine Warnung.
-    return sendJson(res, 200, runSelfCheck());
+    // The QR evaluation runs inside the program itself — Poppler and ZBar are
+    // only optional fallbacks and therefore no reason for a warning.
+    return sendJson(res, 200, runSelfCheck(T));
   }
 
   if (parts[1] === 'audit' && req.method === 'GET') {
@@ -2251,7 +2272,7 @@ async function handleApi(req, res, urlObj) {
 
   if (parts[1] === 'templates' && parts.length === 2 && req.method === 'POST') {
     const body = await readBody(req);
-    if (!body.name) return sendJson(res, 400, { error: 'Name der Vorlage fehlt' });
+    if (!body.name) return sendJson(res, 400, { error: T('Template name missing') });
     config.templates = config.templates || [];
     const { id: _i, name: _n, sortOrder: _s, ...settings } = normalizeJob(body.job || {});
     const tpl = { id: 't_' + crypto.randomBytes(5).toString('hex'), name: body.name.trim(), settings };
@@ -2281,35 +2302,36 @@ async function handleApi(req, res, urlObj) {
             const st = fs.statSync(full);
             size = st.size;
             jobCount = (JSON.parse(fs.readFileSync(full, 'utf8')).jobs || []).length;
-          } catch { /* beschaedigte Sicherung ueberspringen */ }
+          } catch { /* skip a damaged backup */ }
           return { file: f, size, jobCount, ts: f.replace('config-', '').replace('.json', '').replace(/-/g, (m, i) => (i > 9 ? ':' : '-')) };
         })
         .sort((a, b) => b.file.localeCompare(a.file));
-    } catch { /* Ordner existiert noch nicht */ }
+    } catch { /* folder does not exist yet */ }
     return sendJson(res, 200, files);
   }
 
   if (parts[1] === 'backups' && parts[2] === 'restore' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const name = (body.file || '').replace(/[/\\]/g, '');
-    if (!name.startsWith('config-') || !name.endsWith('.json')) return sendJson(res, 400, { error: 'Ungültiger Sicherungsname' });
+    if (!name.startsWith('config-') || !name.endsWith('.json')) return sendJson(res, 400, { error: T('Invalid backup name') });
     const full = path.join(BACKUP_DIR, name);
-    if (!fs.existsSync(full)) return sendJson(res, 404, { error: 'Sicherung nicht gefunden' });
+    if (!fs.existsSync(full)) return sendJson(res, 404, { error: T('Backup not found') });
 
     let restored;
     try {
       restored = JSON.parse(fs.readFileSync(full, 'utf8'));
     } catch (err) {
-      return sendJson(res, 400, { error: 'Sicherung ist beschädigt: ' + err.message });
+      return sendJson(res, 400, { error: T('The backup is damaged: {error}', { error: err.message }) });
     }
-    if (!Array.isArray(restored.jobs)) return sendJson(res, 400, { error: 'Sicherung enthält keine Jobs' });
+    if (!Array.isArray(restored.jobs)) return sendJson(res, 400, { error: T('The backup contains no jobs') });
 
-    // Aktuellen Stand vorher sichern, damit die Wiederherstellung selbst umkehrbar bleibt
+    // Back up the current state first so that the restore itself can be undone
     backupConfig();
     const vorher = config.jobs.length;
     config = restored;
     if (!config.settings) config.settings = defaultSettings();
+    i18n.setBackgroundLanguage(config.settings.language);
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     Object.keys(jobRuntime).forEach((id) => delete jobRuntime[id]);
     appendAudit('config.restore', { benutzer: benutzerName(req), file: name, jobsVorher: vorher, jobsNachher: config.jobs.length });
@@ -2320,17 +2342,17 @@ async function handleApi(req, res, urlObj) {
     const q = urlObj.searchParams;
     const job = config.jobs.find((j) => j.id === q.get('jobId'));
     const fileName = path.basename(q.get('file') || '');
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
-    if (!fileName) return sendJson(res, 400, { error: 'Dateiname fehlt' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
+    if (!fileName) return sendJson(res, 400, { error: T('File name missing') });
 
-    // Datei kann noch im Quellordner liegen oder bereits verschoben worden sein
+    // The file may still be in the source folder or may already have been moved
     const candidates = [
       path.join(job.sourcePath, fileName),
-      path.join(job.sourcePath, job.errorSubfolder || '_fehler', fileName),
-      path.join(job.sourcePath, job.archiveSubfolder || '_gesendet', fileName),
+      path.join(job.sourcePath, job.errorSubfolder || '_error', fileName),
+      path.join(job.sourcePath, job.archiveSubfolder || '_sent', fileName),
     ];
     const found = candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
-    if (!found) return sendJson(res, 404, { error: 'Datei nicht mehr auffindbar (evtl. gelöscht oder verschoben)' });
+    if (!found) return sendJson(res, 404, { error: T('File no longer found (it may have been deleted or moved)') });
 
     const data = fs.readFileSync(found);
     res.writeHead(200, {
@@ -2360,10 +2382,10 @@ async function handleApi(req, res, urlObj) {
   const job = jobId ? config.jobs.find((j) => j.id === jobId) : null;
 
   if (parts[1] === 'jobs' && jobId && parts.length === 3 && req.method === 'PUT') {
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const body = await readBody(req);
-    // Leere Passwortfelder bedeuten „unverändert lassen", nicht „löschen".
-    // Die Oberfläche sendet sie leer, weil der Server sie nie herausgibt.
+    // Empty password fields mean “leave unchanged”, not “delete”.
+    // The interface sends them empty because the server never hands them out.
     if (!body.authPassword) delete body.authPassword;
     if (!body.smtpPasswort) delete body.smtpPasswort;
     const vorher = { ...job };
@@ -2376,8 +2398,8 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'jobs' && jobId && parts.length === 3 && req.method === 'DELETE') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const geloescht = job.name;
     config.jobs = config.jobs.filter((j) => j.id !== jobId);
     delete jobRuntime[jobId];
@@ -2387,7 +2409,7 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'jobs' && jobId && parts[3] === 'toggle' && req.method === 'POST') {
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     job.active = !job.active;
     saveConfig(config);
     return sendJson(res, 200, jobPublicView(job));
@@ -2397,7 +2419,7 @@ async function handleApi(req, res, urlObj) {
     const body = await readBody(req);
     const ids = Array.isArray(body.ids) ? body.ids : [];
     const targets = config.jobs.filter((j) => ids.includes(j.id));
-    if (targets.length === 0) return sendJson(res, 400, { error: 'Keine gültigen Jobs ausgewählt' });
+    if (targets.length === 0) return sendJson(res, 400, { error: T('No valid jobs selected') });
 
     let affected = 0;
     if (body.action === 'activate') {
@@ -2408,12 +2430,12 @@ async function handleApi(req, res, urlObj) {
       const cat = (body.category || '').trim();
       targets.forEach((j) => { j.category = cat; affected += 1; });
     } else if (body.action === 'delete') {
-      if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Löschen ist der Rolle „Verwaltung“ vorbehalten.' });
+      if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('Deleting is reserved for the “Administrator” role.') });
       config.jobs = config.jobs.filter((j) => !ids.includes(j.id));
       ids.forEach((id) => delete jobRuntime[id]);
       affected = targets.length;
     } else {
-      return sendJson(res, 400, { error: 'Unbekannte Sammelaktion' });
+      return sendJson(res, 400, { error: T('Unknown bulk action') });
     }
     saveConfig(config);
     appendAudit('job.bulk', { benutzer: benutzerName(req), action: body.action, affected, category: body.category });
@@ -2423,12 +2445,12 @@ async function handleApi(req, res, urlObj) {
   if (parts[1] === 'jobs' && parts[2] === 'reorder' && req.method === 'POST') {
     const body = await readBody(req);
     const order = Array.isArray(body.order) ? body.order : [];
-    if (order.length === 0) return sendJson(res, 400, { error: 'Keine Reihenfolge übermittelt' });
+    if (order.length === 0) return sendJson(res, 400, { error: T('No order submitted') });
     order.forEach((id, index) => {
       const j = config.jobs.find((x) => x.id === id);
       if (j) j.sortOrder = index;
     });
-    // Jobs ohne Angabe hinten anstellen, damit die Sortierung stabil bleibt
+    // Put jobs without a value at the end so that the sort order stays stable
     let next = order.length;
     config.jobs.forEach((j) => { if (j.sortOrder === null || j.sortOrder === undefined) { j.sortOrder = next; next += 1; } });
     saveConfig(config);
@@ -2437,15 +2459,15 @@ async function handleApi(req, res, urlObj) {
 
   if (parts[1] === 'categories' && parts.length === 2 && req.method === 'GET') {
     const names = Array.from(new Set(config.jobs.map((j) => (j.category || '').trim()).filter(Boolean)));
-    return sendJson(res, 200, names.sort((a, b) => a.localeCompare(b, 'de')));
+    return sendJson(res, 200, names.sort((a, b) => a.localeCompare(b, T.locale)));
   }
 
   if (parts[1] === 'categories' && parts[2] === 'rename' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const from = (body.from || '').trim();
     const to = (body.to || '').trim();
-    if (!from) return sendJson(res, 400, { error: 'Quell-Kategorie fehlt' });
+    if (!from) return sendJson(res, 400, { error: T('Source category missing') });
     let affected = 0;
     config.jobs.forEach((j) => {
       if ((j.category || '').trim() === from) { j.category = to; affected += 1; }
@@ -2457,23 +2479,23 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'config-warnings' && req.method === 'GET') {
-    return sendJson(res, 200, findConfigWarnings());
+    return sendJson(res, 200, findConfigWarnings(T));
   }
 
   if (parts[1] === 'jobs' && jobId && parts[3] === 'archive' && req.method === 'POST') {
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     const body = await readBody(req);
     const archivieren = body.archived !== false;
     job.archived = archivieren;
     job.archivedAt = archivieren ? new Date().toISOString() : null;
-    if (archivieren) job.active = false; // archivierte Jobs laufen nicht weiter
+    if (archivieren) job.active = false; // archived jobs do not keep running
     saveConfig(config);
     appendAudit(archivieren ? 'job.archive' : 'job.unarchive', { benutzer: benutzerName(req), jobId: job.id, jobName: job.name });
     return sendJson(res, 200, jobPublicView(job));
   }
 
   if (parts[1] === 'jobs' && jobId && parts[3] === 'run-now' && req.method === 'POST') {
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found') });
     processJob(job);
     return sendJson(res, 202, { ok: true });
   }
@@ -2491,38 +2513,37 @@ async function handleApi(req, res, urlObj) {
   if (parts[1] === 'logs' && parts[2] === 'retry' && req.method === 'POST') {
     const body = await readBody(req);
     const job = config.jobs.find((j) => j.id === body.jobId);
-    if (!job) return sendJson(res, 404, { error: 'Job nicht gefunden (evtl. inzwischen gelöscht)' });
+    if (!job) return sendJson(res, 404, { error: T('Job not found (it may have been deleted)') });
     const fileName = body.file;
-    if (!fileName) return sendJson(res, 400, { error: 'Dateiname fehlt' });
+    if (!fileName) return sendJson(res, 400, { error: T('File name missing') });
 
     const candidates = [
       path.join(job.sourcePath, fileName),
-      path.join(job.sourcePath, job.errorSubfolder || '_fehler', fileName),
-      path.join(job.sourcePath, job.archiveSubfolder || '_gesendet', fileName),
-      path.join(job.sourcePath, job.quarantaeneSubfolder || '_quarantaene', fileName),
+      path.join(job.sourcePath, job.errorSubfolder || '_error', fileName),
+      path.join(job.sourcePath, job.archiveSubfolder || '_sent', fileName),
+      path.join(job.sourcePath, job.quarantaeneSubfolder || '_quarantine', fileName),
     ];
     const filePath = candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
     if (!filePath) {
       return sendJson(res, 404, {
-        error: `„${fileName}" ist weder im Quell-Ordner noch im Archiv, Fehler- oder Quarantäne-Ordner auffindbar. `
-          + 'Möglicherweise wurde sie inzwischen aufgeräumt oder von Hand entfernt.',
+        error: T('“{file}” is neither in the source folder nor in the archive, error or quarantine folder. It may have been cleaned up or removed by hand.', { file: fileName }),
       });
     }
 
-    // Aus dem Archiv gesendet? Das gehört ins Protokoll, sonst wirkt es
-    // später wie eine doppelte Übertragung ohne erkennbaren Grund.
-    const ausArchiv = filePath.includes(path.sep + (job.archiveSubfolder || '_gesendet') + path.sep);
+    // Sent from the archive? That belongs in the log, otherwise it later
+    // looks like a duplicate transfer without an apparent reason.
+    const ausArchiv = filePath.includes(path.sep + (job.archiveSubfolder || '_sent') + path.sep);
 
     let fileSize = null;
-    try { fileSize = fs.statSync(filePath).size; } catch { /* egal */ }
+    try { fileSize = fs.statSync(filePath).size; } catch { /* ignore */ }
 
-    // Wiederholung muss denselben Weg gehen wie ein regulaerer Lauf,
-    // sonst wuerde bei Verarbeitungs-Jobs die Rohdatei statt der Nachricht gesendet.
+    // A retry must take the same path as a regular run, otherwise
+    // processing jobs would send the raw file instead of the message.
     let sendung = filePath;
     let verarbeitungsInfo = null;
     const aufraeumen = [];
 
-    // Auch die Wiederholung sichtbar machen
+    // Make the retry visible as well
     const rtRetry = ensureRuntime(job);
     if (!rtRetry.inArbeit) rtRetry.inArbeit = new Map();
     rtRetry.inArbeit.set(filePath, { name: fileName, seit: Date.now(), groesse: fileSize });
@@ -2535,7 +2556,7 @@ async function handleApi(req, res, urlObj) {
         appendLog({
           ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
           file: fileName, fileSize, status: 'error', httpStatus: null,
-          message: `Verarbeitung fehlgeschlagen: ${vorbereitet.fehler}`,
+          message: L('Processing failed: {error}', { error: vorbereitet.fehler }),
         });
         retryFertig();
         return sendJson(res, 200, { ok: false, httpStatus: null, message: vorbereitet.fehler });
@@ -2547,7 +2568,7 @@ async function handleApi(req, res, urlObj) {
 
     const result = await new Promise((resolve) => runCurlAllTargets(job, sendung, resolve));
     retryFertig();
-    aufraeumen.forEach((f) => { try { fs.unlinkSync(f); } catch { /* egal */ } });
+    aufraeumen.forEach((f) => { try { fs.unlinkSync(f); } catch { /* ignore */ } });
     const entry = {
       ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
       file: fileName, fileSize, status: result.ok ? 'success' : 'error', httpStatus: result.httpStatus,
@@ -2559,11 +2580,11 @@ async function handleApi(req, res, urlObj) {
       vonHand: true,
       ausArchiv,
       message: (ausArchiv
-        ? '↻ Von Hand nochmals gesendet — die Datei war bereits übertragen. '
-        : '↻ Von Hand erneut gesendet. ')
-        + (verarbeitungsInfo && !verarbeitungsInfo.qrGefunden ? `⚠ Ohne QR-Wert gesendet (${verarbeitungsInfo.qrHinweis}). ` : '')
+        ? '↻ ' + L('Sent again by hand — the file had already been transferred.') + ' '
+        : '↻ ' + L('Resent by hand.') + ' ')
+        + (verarbeitungsInfo && !verarbeitungsInfo.qrGefunden ? '⚠ ' + L('Sent without QR value ({reason}).', { reason: verarbeitungsInfo.qrHinweis }) + ' ' : '')
         + (verarbeitungsInfo && verarbeitungsInfo.qrGefunden ? `QR: ${verarbeitungsInfo.qrWert} · ` : '')
-        + (result.ok ? result.bodySnippet : (result.errorText || result.bodySnippet || 'Unbekannter Fehler')),
+        + (result.ok ? result.bodySnippet : (result.errorText || result.bodySnippet || L('Unknown error'))),
     };
     appendLog(entry);
     appendAudit('uebertragung.wiederholt', {
@@ -2575,22 +2596,22 @@ async function handleApi(req, res, urlObj) {
     rt.lastResult = entry.status;
     rt.consecutiveFailures = entry.status === 'success' ? 0 : rt.consecutiveFailures + 1;
     try {
-      if (result.ok && job.onSuccess === 'archive') moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_gesendet');
-      else if (!result.ok && job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_fehler');
-    } catch { /* Verschieben fehlgeschlagen, Übertragungsergebnis bleibt gueltig */ }
+      if (result.ok && job.onSuccess === 'archive') moveFile(filePath, job.sourcePath, job.archiveSubfolder || '_sent');
+      else if (!result.ok && job.onError === 'archive') moveFile(filePath, job.sourcePath, job.errorSubfolder || '_error');
+    } catch { /* moving failed; the transfer result stays valid */ }
 
     return sendJson(res, 200, { ok: result.ok, httpStatus: result.httpStatus, message: entry.message });
   }
 
   if (parts[1] === 'logs' && parts.length === 2 && req.method === 'DELETE') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     fs.writeFileSync(LOG_PATH, '');
     config.jobs.forEach((job) => {
       const rt = ensureRuntime(job);
       rt.lastRunTs = null;
       rt.lastResult = null;
       rt.consecutiveFailures = 0;
-      // rt.nextDueTs und rt.running bleiben unangetastet, damit der Scan-Zeitplan nicht gestört wird
+      // rt.nextDueTs and rt.running stay untouched so that the scan schedule is not disturbed
     });
     return sendJson(res, 200, { ok: true });
   }
@@ -2602,19 +2623,24 @@ async function handleApi(req, res, urlObj) {
       updatePruefUrl: config.settings.updatePruefUrl || '',
       letzteUpdatePruefung: config.settings.letzteUpdatePruefung || null,
       neustartVerhalten: config.settings.neustartVerhalten || 'selbst',
+      language: i18n.normalize(config.settings.language) || i18n.DEFAULT_LANGUAGE,
       baustand: BAUSTAND,
       version: VERSION,
     });
   }
 
   if (parts[1] === 'settings' && parts.length === 2 && req.method === 'PUT') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     if (body.neustartVerhalten !== undefined) {
       config.settings.neustartVerhalten = body.neustartVerhalten === 'beenden' ? 'beenden' : 'selbst';
     }
     if (body.updatePruefUrl !== undefined) {
       config.settings.updatePruefUrl = String(body.updatePruefUrl || '').trim();
+    }
+    if (body.language !== undefined) {
+      config.settings.language = i18n.normalize(body.language) || i18n.DEFAULT_LANGUAGE;
+      i18n.setBackgroundLanguage(config.settings.language);
     }
     if (body.jobUebersichtImLogin !== undefined) {
       config.settings.jobUebersichtImLogin = Boolean(body.jobUebersichtImLogin);
@@ -2628,8 +2654,8 @@ async function handleApi(req, res, urlObj) {
       if (da.enabled === false) {
         config.settings.dashboardAuth = { enabled: false, username: '', passwordHash: '', salt: '' };
       } else if (da.enabled === true) {
-        if (!da.username) return sendJson(res, 400, { error: 'Benutzername fehlt' });
-        // Passwort nur aendern, wenn tatsaechlich eines mitgeschickt wurde (leer = unveraendert)
+        if (!da.username) return sendJson(res, 400, { error: T('User name missing') });
+        // Only change the password if one was actually sent (empty = unchanged)
         if (da.password) {
           const salt = crypto.randomBytes(8).toString('hex');
           const passwordHash = crypto.createHash('sha256').update(salt + da.password).digest('hex');
@@ -2638,7 +2664,7 @@ async function handleApi(req, res, urlObj) {
           config.settings.dashboardAuth.enabled = true;
           config.settings.dashboardAuth.username = da.username;
         } else {
-          return sendJson(res, 400, { error: 'Bitte ein Passwort vergeben' });
+          return sendJson(res, 400, { error: T('Please set a password') });
         }
       }
     }
@@ -2649,6 +2675,7 @@ async function handleApi(req, res, urlObj) {
       updatePruefUrl: config.settings.updatePruefUrl || '',
       letzteUpdatePruefung: config.settings.letzteUpdatePruefung || null,
       neustartVerhalten: config.settings.neustartVerhalten || 'selbst',
+      language: i18n.normalize(config.settings.language) || i18n.DEFAULT_LANGUAGE,
       baustand: BAUSTAND,
       version: VERSION,
     });
@@ -2661,17 +2688,17 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'benachrichtigung' && parts.length === 2 && req.method === 'PUT') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const body = await readBody(req);
     const vorhanden = config.settings.benachrichtigung || defaultSettings().benachrichtigung;
     if (body.emailAktiv && !String(body.smtpHost || '').trim()) {
-      return sendJson(res, 400, { error: 'Bitte einen SMTP-Server angeben.' });
+      return sendJson(res, 400, { error: T('Please enter an SMTP server.') });
     }
     if (body.emailAktiv && !String(body.an || '').trim()) {
-      return sendJson(res, 400, { error: 'Bitte mindestens eine Empfängeradresse angeben.' });
+      return sendJson(res, 400, { error: T('Please enter at least one recipient address.') });
     }
     if (body.webhookAktiv && !String(body.webhookUrl || '').trim()) {
-      return sendJson(res, 400, { error: 'Bitte eine Webhook-URL angeben.' });
+      return sendJson(res, 400, { error: T('Please enter a webhook URL.') });
     }
     config.settings.benachrichtigung = {
       emailAktiv: Boolean(body.emailAktiv),
@@ -2679,7 +2706,7 @@ async function handleApi(req, res, urlObj) {
       smtpPort: Number(body.smtpPort) || 587,
       smtpSicher: body.smtpSicher !== false,
       smtpBenutzer: String(body.smtpBenutzer || '').trim(),
-      // Leeres Feld = unverändert lassen, wie schon bei den Job-Zugangsdaten
+      // Empty field = leave unchanged, as with the job credentials
       smtpPasswort: body.smtpPasswort !== undefined && body.smtpPasswort !== ''
         ? body.smtpPasswort
         : (vorhanden.smtpPasswort || ''),
@@ -2695,19 +2722,19 @@ async function handleApi(req, res, urlObj) {
   }
 
   if (parts[1] === 'benachrichtigung' && parts[2] === 'test' && req.method === 'POST') {
-    if (!istVerwaltung(req)) return sendJson(res, 403, { error: 'Diese Aktion ist der Rolle „Verwaltung“ vorbehalten.' });
+    if (!istVerwaltung(req)) return sendJson(res, 403, { error: T('This action is reserved for the “Administrator” role.') });
     const cfg = config.settings.benachrichtigung || defaultSettings().benachrichtigung;
     if (!cfg.emailAktiv && !cfg.webhookAktiv) {
-      return sendJson(res, 400, { error: 'Kein Kanal aktiviert — zuerst E-Mail oder Webhook einschalten und speichern.' });
+      return sendJson(res, 400, { error: T('No channel enabled — turn on e-mail or webhook and save first.') });
     }
     const ergebnisse = await sendeTestBenachrichtigung(cfg);
     return sendJson(res, 200, ergebnisse);
   }
 
-  sendJson(res, 404, { error: 'Unbekannter Endpunkt' });
+  sendJson(res, 404, { error: T('Unknown endpoint') });
 }
 
-// ---------- Static Files ----------
+// ---------- Static files ----------
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8' };
 
@@ -2725,7 +2752,7 @@ function serveStatic(req, res, urlObj) {
 
 // ---------- Server ----------
 
-// ---------- Zugriffsschutz (optional) ----------
+// ---------- Access protection (optional) ----------
 
 function isAuthorized(req) {
   const auth = config.settings.dashboardAuth;
@@ -2738,7 +2765,7 @@ function isAuthorized(req) {
   return hash === auth.passwordHash;
 }
 
-// ---------- Log-Aufbewahrung (automatische Rotation) ----------
+// ---------- Log retention (automatic rotation) ----------
 
 function rotateLogsIfNeeded() {
   const days = config.settings.logRetentionDays || 90;
@@ -2747,19 +2774,19 @@ function rotateLogsIfNeeded() {
   const kept = all.filter((l) => new Date(l.ts).getTime() >= cutoff);
   if (kept.length !== all.length) {
     fs.writeFileSync(LOG_PATH, kept.map((l) => JSON.stringify(l)).join('\n') + (kept.length ? '\n' : ''));
-    console.log(`Log-Rotation: ${all.length - kept.length} Einträge älter als ${days} Tage entfernt.`);
+    console.log(`Log rotation: removed ${all.length - kept.length} entries older than ${days} days.`);
   }
 }
 rotateLogsIfNeeded();
-setInterval(rotateLogsIfNeeded, 6 * 60 * 60 * 1000); // alle 6 Stunden pruefen
+setInterval(rotateLogsIfNeeded, 6 * 60 * 60 * 1000); // check every 6 hours
 
-// ---------- Archiv-Aufräumung ----------
+// ---------- Archive clean-up ----------
 
 function cleanupArchives() {
   config.jobs.forEach((job) => {
     const days = job.archiveRetentionDays || 0;
     if (days <= 0) return;
-    const dir = path.join(job.sourcePath, job.archiveSubfolder || '_gesendet');
+    const dir = path.join(job.sourcePath, job.archiveSubfolder || '_sent');
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -2768,58 +2795,58 @@ function cleanupArchives() {
       const full = path.join(dir, e.name);
       try {
         if (fs.statSync(full).mtimeMs < cutoff) { fs.unlinkSync(full); removed += 1; }
-      } catch { /* egal */ }
+      } catch { /* ignore */ }
     });
     if (removed > 0) {
       appendLog({
         ts: new Date().toISOString(), jobId: job.id, jobName: job.name, targetUrl: job.targetUrl,
         file: null, status: 'success', httpStatus: null,
-        message: `Archiv aufgeräumt: ${removed} Datei(en) älter als ${days} Tage entfernt.`,
+        message: L('Archive cleaned up: removed {count} file(s) older than {days} days.', { count: removed, days }),
       });
     }
   });
 }
 setInterval(cleanupArchives, 6 * 60 * 60 * 1000);
 
-// ---------- Selbstdiagnose beim Start ----------
+// ---------- Self-check at start-up ----------
 
-function runSelfCheck() {
+function runSelfCheck(T = L) {
   const problems = [];
   config.jobs.forEach((job) => {
     if (!job.active || job.archived) return;
     try {
       const st = fs.statSync(job.sourcePath);
-      if (!st.isDirectory()) problems.push({ jobId: job.id, jobName: job.name, problem: `Quell-Pfad ist kein Ordner: ${job.sourcePath}` });
+      if (!st.isDirectory()) problems.push({ jobId: job.id, jobName: job.name, problem: T('Source path is not a folder: {path}', { path: job.sourcePath }) });
     } catch (err) {
-      problems.push({ jobId: job.id, jobName: job.name, problem: `Quell-Ordner nicht erreichbar: ${job.sourcePath} (${err.code || err.message})` });
+      problems.push({ jobId: job.id, jobName: job.name, problem: T('Source folder not reachable: {path} ({code})', { path: job.sourcePath, code: err.code || err.message }) });
     }
-    // Je nach Zielart ist etwas anderes erforderlich
+    // Different things are required depending on the target type
     if (job.zielTyp === 'ordner') {
-      if (!job.zielOrdner) problems.push({ jobId: job.id, jobName: job.name, problem: 'Kein Zielordner konfiguriert' });
+      if (!job.zielOrdner) problems.push({ jobId: job.id, jobName: job.name, problem: T('No target folder configured') });
     } else if (job.zielTyp === 'email') {
-      if (!job.smtpHost) problems.push({ jobId: job.id, jobName: job.name, problem: 'Kein SMTP-Server konfiguriert' });
-      if (!job.mailAn) problems.push({ jobId: job.id, jobName: job.name, problem: 'Keine Empfängeradresse konfiguriert' });
+      if (!job.smtpHost) problems.push({ jobId: job.id, jobName: job.name, problem: T('No SMTP server configured') });
+      if (!job.mailAn) problems.push({ jobId: job.id, jobName: job.name, problem: T('No recipient address configured') });
     } else if (!job.targetUrl) {
-      problems.push({ jobId: job.id, jobName: job.name, problem: 'Keine Ziel-URL konfiguriert' });
+      problems.push({ jobId: job.id, jobName: job.name, problem: T('No target URL configured') });
     }
   });
   lastSelfCheck = { ts: new Date().toISOString(), problems };
   if (problems.length > 0) {
-    console.log(`Selbstdiagnose: ${problems.length} Problem(e) gefunden:`);
+    console.log(`Self-check: ${problems.length} problem(s) found:`);
     problems.forEach((p) => console.log(`  - ${p.jobName}: ${p.problem}`));
   } else {
-    console.log('Selbstdiagnose: alle aktiven Jobs in Ordnung.');
+    console.log('Self-check: all active jobs are fine.');
   }
   return lastSelfCheck;
 }
 let lastSelfCheck = { ts: null, problems: [] };
 
-// Startet die Anwendung neu. Läuft sie unter einem Dienst oder start.bat,
-// übernimmt der Aufrufer den Neustart; sonst starten wir uns selbst neu.
+// Restarts the application. If it runs under a service or start.bat,
+// the caller takes care of the restart; otherwise we restart ourselves.
 /**
- * Versucht zu erkennen, wie die Anwendung betrieben wird.
- * Ein angeschlossenes Konsolenfenster spricht für start.bat; fehlt es
- * unter Windows, läuft sie vermutlich als Aufgabe oder Dienst.
+ * Tries to detect how the application is run.
+ * An attached console window points to start.bat; if it is missing
+ * on Windows, it probably runs as a scheduled task or service.
  */
 function erkenneBetriebsart() {
   const mitKonsole = Boolean(process.stdout.isTTY);
@@ -2844,14 +2871,14 @@ function starteNeu() {
   const verhalten = (config.settings && config.settings.neustartVerhalten) || 'selbst';
 
   const nachfolgerStarten = () => {
-    if (neustartLaeuft) return;   // nur einmal, auch wenn beide Auslöser greifen
+    if (neustartLaeuft) return;   // only once, even if both triggers fire
     neustartLaeuft = true;
 
-    // Läuft die Anwendung unter Aufgabenplanung oder als Dienst, darf sie
-    // sich NICHT selbst neu starten — sonst kennt Windows den neuen Vorgang
-    // nicht und beide könnten sich um den Port streiten.
+    // If the application runs under the task scheduler or as a service, it must
+    // NOT restart itself — otherwise Windows does not know the new process
+    // and both could fight over the port.
     if (verhalten === 'beenden') {
-      console.log('Anwendung wird beendet — der Neustart erfolgt durch Windows (Aufgabe bzw. Dienst).');
+      console.log('Shutting down — the scheduled task or service restarts the application.');
       setTimeout(() => process.exit(0), 300);
       return;
     }
@@ -2862,7 +2889,7 @@ function starteNeu() {
       try {
         fs.mkdirSync(path.dirname(protokoll), { recursive: true });
         ausgabe = fs.openSync(protokoll, 'a');
-      } catch { /* ohne Protokoll weiter */ }
+      } catch { /* continue without a log */ }
 
       const kind = spawn(process.argv[0], process.argv.slice(1), {
         cwd: __dirname,
@@ -2872,15 +2899,15 @@ function starteNeu() {
       });
       kind.unref();
     } catch (e) {
-      console.error('Neustart konnte nicht ausgelöst werden:', e.message);
+      console.error('Could not trigger the restart:', e.message);
     }
     setTimeout(() => process.exit(0), 300);
   };
 
-  // Erst den Port freigeben, sonst scheitert der neue Vorgang beim Binden
+  // Release the port first, otherwise the new process fails to bind
   try {
     server.close(() => setTimeout(nachfolgerStarten, 400));
-    // Falls noch Verbindungen offen sind, nicht ewig warten
+    // If connections are still open, do not wait forever
     setTimeout(nachfolgerStarten, 2500);
   } catch {
     nachfolgerStarten();
@@ -2895,26 +2922,32 @@ const server = http.createServer(async (req, res) => {
   const angemeldet = Boolean(aktuelleSitzung(req));
   const schutz = zugriffsschutzAktiv();
 
-  // Anmeldeseite und alles, was sie zum Anzeigen braucht, sind immer erreichbar.
-  // /sprache.js gehört dazu — sonst schlägt die Sprachumschaltung auf der
-  // Anmeldeseite fehl: Der Browser bekäme statt des Skripts eine Weiterleitung
-  // auf /anmelden.html zurück, was als JavaScript nicht ausführbar ist.
+  // The sign-in page and everything it needs for display are always reachable.
+  // The translation scripts belong to that — otherwise the browser would get
+  // a redirect instead of the script on the sign-in page.
   const immerErlaubt = pfad === '/anmelden.html' || pfad === '/style.css'
-    || pfad === '/favicon.ico' || pfad === '/sprache.js';
+    || pfad === '/favicon.ico' || pfad === '/i18n.js' || pfad === '/i18n-catalog.js';
 
   if (schutz && !angemeldet && !immerErlaubt && !OEFFENTLICH.has(pfad)) {
     if (pfad.startsWith('/api/')) {
-      return sendJson(res, 401, { error: 'Nicht angemeldet', anmeldungNoetig: true });
+      return sendJson(res, 401, { error: i18n.forRequest(req)('Not signed in'), anmeldungNoetig: true });
     }
-    // Alle übrigen Seitenaufrufe auf den Anmeldebildschirm leiten
+    // Redirect all other page requests to the sign-in screen
     res.writeHead(302, { Location: '/anmelden.html' });
     return res.end();
   }
 
-  // Bereits angemeldet? Dann nicht auf der Anmeldeseite festhalten
+  // Already signed in? Then do not keep the user on the sign-in page
   if (angemeldet && pfad === '/anmelden.html') {
     res.writeHead(302, { Location: '/' });
     return res.end();
+  }
+
+  // Translation catalogs for the browser (English is the source language)
+  if (pfad === '/i18n-catalog.js') {
+    const body = `window.I18N_CATALOGS = ${JSON.stringify(i18n.catalogs)};\n`;
+    res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(body);
   }
 
   if (pfad.startsWith('/api/')) {
@@ -2930,7 +2963,7 @@ const server = http.createServer(async (req, res) => {
 
 const PORT = config.port || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Folderpost läuft auf http://0.0.0.0:${PORT}`);
+  console.log(`Folderpost is running on http://0.0.0.0:${PORT}`);
   runSelfCheck();
   cleanupArchives();
 });

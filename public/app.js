@@ -1,4 +1,14 @@
-// ---------- DOM-Referenzen ----------
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
+// Texts are translated with t() from public/i18n.js (English is the source language).
+const LOCALE = (window.I18n && window.I18n.locale) || 'en-GB';
+const SPRACHE = (window.I18n && window.I18n.lang) || 'en';
+// Marker for “no category” — must match NO_CATEGORY in server.js
+const NO_CATEGORY = '__uncategorized__';
+const kategorieName = (c) => (c === NO_CATEGORY ? t('Uncategorized') : c);
+
+// ---------- DOM references ----------
 
 const jobsList = document.getElementById('jobs-list');
 const logStream = document.getElementById('log-stream');
@@ -49,7 +59,7 @@ let pendingConfirmAction = null;
 let activeCategory = '';
 let groupByCategory = localStorage.getItem('groupByCategory') !== 'false';
 let eingeklappteKategorien = new Set();
-try { eingeklappteKategorien = new Set(JSON.parse(localStorage.getItem('eingeklappteKategorien') || '[]')); } catch { /* egal */ }
+try { eingeklappteKategorien = new Set(JSON.parse(localStorage.getItem('eingeklappteKategorien') || '[]')); } catch { /* ignore */ }
 let compactMode = localStorage.getItem('compactMode') === 'true';
 let lastStatus = null;
 let selectMode = false;
@@ -59,32 +69,32 @@ let currentDetailJobId = null;
 let showArchived = false;
 let warningsDismissed = false;
 
-// ---------- Hilfsfunktionen ----------
+// ---------- Helpers ----------
 
-// Kurze, lesbare Zeitspanne — die genaue Zeit steht jeweils im Tooltip
+// Short, readable time span — the exact time is in the tooltip
 function fmtRelativ(ts) {
   if (!ts) return '';
   const sek = Math.round((Date.now() - new Date(ts).getTime()) / 1000);
-  if (sek < 10) return 'gerade eben';
-  if (sek < 60) return `vor ${sek}s`;
-  if (sek < 3600) return `vor ${Math.round(sek / 60)} Min.`;
-  if (sek < 86400) return `vor ${Math.round(sek / 3600)} Std.`;
-  return `vor ${Math.round(sek / 86400)} Tagen`;
+  if (sek < 10) return t('just now');
+  if (sek < 60) return t('{n}s ago', { n: sek });
+  if (sek < 3600) return t('{n} min ago', { n: Math.round(sek / 60) });
+  if (sek < 86400) return t('{n} h ago', { n: Math.round(sek / 3600) });
+  return t('{n} days ago', { n: Math.round(sek / 86400) });
 }
 
 function fmtTime(ts) {
   if (!ts) return '–';
   const d = new Date(ts);
-  return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 function fmtDateTime(ts) {
   if (!ts) return '–';
   const d = new Date(ts);
-  return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 function fmtDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  return d.toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit' });
 }
 function fmtBytes(n) {
   if (!n || n <= 0) return '0 B';
@@ -104,15 +114,15 @@ function statusOf(job) {
 }
 
 async function api(path, options) {
-  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json', 'X-Language': SPRACHE }, ...options });
   if (res.status === 401) {
     const daten = await res.json().catch(() => ({}));
     if (daten.anmeldungNoetig) { window.location.href = '/anmelden.html'; }
-    throw new Error(daten.error || 'Nicht angemeldet');
+    throw new Error(daten.error || t('Not signed in'));
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Anfrage fehlgeschlagen');
+    throw new Error(err.error || t('Request failed'));
   }
   return res.status === 204 ? null : res.json();
 }
@@ -131,13 +141,13 @@ function showToast(message, type = 'info') {
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
-    showToast('In Zwischenablage kopiert', 'success');
+    showToast(t('Copied to clipboard'), 'success');
   } catch {
-    showToast('Kopieren nicht möglich', 'error');
+    showToast(t('Copying is not possible'), 'error');
   }
 }
 
-// ---------- Theme (hell/dunkel) ----------
+// ---------- Theme (light/dark) ----------
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -164,7 +174,7 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   if (activeTab === 'statistik') loadStats();
 });
 
-// ---------- Laden ----------
+// ---------- Loading ----------
 
 async function loadJobs() {
   jobsCache = await api('/jobs');
@@ -175,7 +185,7 @@ async function loadJobs() {
 async function loadLogsAll() {
   logsCache = await api('/logs?limit=500');
   renderLogs();
-  renderJobs(); // Pulse-Streifen in Job-Karten hängen von den Logs ab
+  renderJobs(); // The pulse strips in job cards depend on the logs
 }
 
 async function loadStatus() {
@@ -190,15 +200,15 @@ async function loadStatus() {
 function renderStateBreakdown(s) {
   const st = s.states || {};
   const chips = [];
-  if (st.running) chips.push(`<span class="state-chip running"><i></i>${st.running} laufend</span>`);
-  if (st.failing) chips.push(`<span class="state-chip failing"><i></i>${st.failing} fehlerhaft</span>`);
-  if (st.paused) chips.push(`<span class="state-chip paused"><i></i>${st.paused} pausiert</span>`);
-  if (st.outsideSchedule) chips.push(`<span class="state-chip schedule"><i></i>${st.outsideSchedule} außerhalb Zeitfenster</span>`);
-  document.getElementById('state-breakdown').innerHTML = chips.join('') || '<span class="state-chip idle"><i></i>alle unauffällig</span>';
+  if (st.running) chips.push(`<span class="state-chip running"><i></i>${t('{n} running', { n: st.running })}</span>`);
+  if (st.failing) chips.push(`<span class="state-chip failing"><i></i>${t('{n} failing', { n: st.failing })}</span>`);
+  if (st.paused) chips.push(`<span class="state-chip paused"><i></i>${t('{n} paused', { n: st.paused })}</span>`);
+  if (st.outsideSchedule) chips.push(`<span class="state-chip schedule"><i></i>${t('{n} outside time window', { n: st.outsideSchedule })}</span>`);
+  document.getElementById('state-breakdown').innerHTML = chips.join('') || `<span class="state-chip idle"><i></i>${t('all normal')}</span>`;
 
   const cats = (s.categories || []).length;
   document.getElementById('active-breakdown').innerHTML = cats > 1
-    ? `<span class="state-chip"><i></i>${cats} <span>Kategorien</span></span>`
+    ? `<span class="state-chip"><i></i>${t('{n} categories', { n: cats })}</span>`
     : '';
 }
 
@@ -207,10 +217,10 @@ function renderCategoryBar(s) {
   const cats = s.categories || [];
   if (cats.length <= 1) { bar.innerHTML = ''; return; }
 
-  const pills = [`<button class="category-pill ${activeCategory === '' ? 'active' : ''}" data-cat="">Alle <span class="count">${s.jobCount}</span></button>`];
+  const pills = [`<button class="category-pill ${activeCategory === '' ? 'active' : ''}" data-cat="">${t('All')} <span class="count">${s.jobCount}</span></button>`];
   cats.forEach((c) => {
     const warn = c.failing > 0 ? `<span class="warn">⚠ ${c.failing}</span>` : '';
-    pills.push(`<button class="category-pill ${activeCategory === c.name ? 'active' : ''}" data-cat="${escapeHtml(c.name)}">${escapeHtml(c.name)} <span class="count">${c.total}</span>${warn}</button>`);
+    pills.push(`<button class="category-pill ${activeCategory === c.name ? 'active' : ''}" data-cat="${escapeHtml(c.name)}">${escapeHtml(kategorieName(c.name))} <span class="count">${c.total}</span>${warn}</button>`);
   });
   bar.innerHTML = pills.join('');
 }
@@ -258,16 +268,16 @@ document.getElementById('stats-range-pills').addEventListener('click', (e) => {
   loadStats();
 });
 
-// ---------- Filter-Dropdown befüllen ----------
+// ---------- Filling the filter dropdown ----------
 
 function renderFilterOptions() {
   const current = filterJob.value;
-  filterJob.innerHTML = '<option value="">Alle Jobs</option>' +
+  filterJob.innerHTML = `<option value="">${t('All jobs')}</option>` +
     jobsCache.map((j) => `<option value="${j.id}">${escapeHtml(j.name)}</option>`).join('');
   filterJob.value = current;
 }
 
-// ---------- Jobs rendern ----------
+// ---------- Rendering jobs ----------
 
 function volumenSparklineDaten(jobId, tage = 7) {
   const heute = new Date(); heute.setHours(0, 0, 0, 0);
@@ -314,9 +324,9 @@ function zeigeSkelett() {
 }
 
 let letzteJobSignatur = null;
-// Merkt sich je Job den Zeitstempel der zuletzt gesehenen Übertragung, um
-// eine Karte kurz aufleuchten zu lassen, wenn tatsächlich Neues eintrifft —
-// nicht bei jedem Neuzeichnen aus anderem Grund (Filter, Sortierung, ...).
+// Remembers per job the timestamp of the last transfer seen, so that a
+// card can light up briefly when something new actually arrives —
+// not on every redraw for another reason (filter, sorting, ...).
 let letzteAktivitaetJeJob = {};
 let letzteLogSignatur = null;
 
@@ -328,12 +338,12 @@ function jobSignatur(liste) {
     j.runtime.lastResult, j.runtime.consecutiveFailures, j.runtime.waitingCount,
     j.runtime.lastSuccess ? j.runtime.lastSuccess.ts : null,
     (j.runtime.inArbeit || []).map((d) => d.name).join(','),
-    // Der Pulsstreifen entsteht aus dem Protokoll. Früher stand hier ein Feld
-    // des Servers, das es nicht gibt — dadurch bemerkte die Oberfläche nicht,
-    // wenn Protokolldaten eintrafen, und der Streifen blieb leer.
+    // The pulse strip is built from the log. This used to read a server field
+    // that does not exist — so the interface did not notice when log data
+    // arrived, and the strip stayed empty.
     pulseForJob(j.id, 20).map((e) => (e.status === 'success' ? 'e' : 'f')).join(''),
-    // Ebenso für die Sparkline nötig — sonst bleibt sie stehen, wenn sich nur
-    // ältere (außerhalb der letzten 20 Einträge liegende) Tageswerte ändern.
+    // Also needed for the sparkline — otherwise it does not update when only
+    // older daily values (outside the last 20 entries) change.
     volumenSparklineDaten(j.id).join(','),
   ])) + '|' + [activeCategory, groupByCategory, compactMode, showArchived, selectMode,
     Array.from(selectedIds).sort().join(','), jobSort.value,
@@ -346,8 +356,8 @@ function renderJobs(erzwingen = false) {
     jobsList.innerHTML = `
       <div class="empty-state">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        <p class="empty-title">Noch keine Jobs</p>
-        <p>Lege oben rechts den ersten Übertragungs-Job an.</p>
+        <p class="empty-title">${t('No jobs yet')}</p>
+        <p>${t('Create the first transfer job at the top right.')}</p>
       </div>`;
     return;
   }
@@ -362,15 +372,15 @@ function renderJobs(erzwingen = false) {
   list = list.filter((j) => Boolean(j.archived) === showArchived);
 
   if (activeCategory) {
-    list = list.filter((j) => ((j.category || '').trim() || 'Ohne Kategorie') === activeCategory);
+    list = list.filter((j) => ((j.category || '').trim() || NO_CATEGORY) === activeCategory);
   }
 
   const statusRank = { error: 0, running: 1, idle: 2, success: 3 };
   const sortMode = jobSort.value;
   const sortFn = (a, b) => {
     if (sortMode === 'manual') return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999);
-    if (sortMode === 'name') return a.name.localeCompare(b.name, 'de');
-    // Jobs mit Fehlerserie immer zuoberst — sie brauchen Aufmerksamkeit
+    if (sortMode === 'name') return a.name.localeCompare(b.name, LOCALE);
+    // Jobs with a series of errors always on top — they need attention
     const dringend = (j) => ((j.runtime.consecutiveFailures || 0) >= 3 ? 0 : 1);
     if (dringend(a) !== dringend(b)) return dringend(a) - dringend(b);
     if (sortMode === 'recent') return (b.runtime.lastRunTs || 0) - (a.runtime.lastRunTs || 0);
@@ -381,13 +391,13 @@ function renderJobs(erzwingen = false) {
 
   if (list.length === 0) {
     jobsList.innerHTML = showArchived
-      ? `<div class="empty-state"><p class="empty-title">Archiv ist leer</p><p>Nicht mehr benötigte Jobs lassen sich über das ⋯-Menü einer Job-Karte hierher verschieben.</p></div>`
-      : `<div class="empty-state"><p class="empty-title">Keine Treffer</p><p>Filter oder Suchbegriff anpassen.</p></div>`;
+      ? `<div class="empty-state"><p class="empty-title">${t('The archive is empty')}</p><p>${t('Jobs that are no longer needed can be moved here via the ⋯ menu of a job card.')}</p></div>`
+      : `<div class="empty-state"><p class="empty-title">${t('No matches')}</p><p>${t('Adjust the filter or search term.')}</p></div>`;
     return;
   }
 
-  // Nur neu aufbauen, wenn sich wirklich etwas geändert hat — sonst blitzt
-  // die Liste bei jeder Aktualisierung im Vier-Sekunden-Takt kurz auf.
+  // Only rebuild if something has really changed — otherwise the list
+  // flashes briefly on every refresh every four seconds.
   const signatur = jobSignatur(list);
   if (!erzwingen && signatur === letzteJobSignatur && jobsList.querySelector('.job-card')) {
     tickCountdowns();
@@ -400,22 +410,22 @@ function renderJobs(erzwingen = false) {
   if (groupByCategory && !activeCategory) {
     const groups = new Map();
     list.forEach((job) => {
-      const cat = (job.category || '').trim() || 'Ohne Kategorie';
+      const cat = (job.category || '').trim() || NO_CATEGORY;
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat).push(job);
     });
     const sortedGroups = Array.from(groups.entries()).sort((a, b) => {
-      if (a[0] === 'Ohne Kategorie') return 1;
-      if (b[0] === 'Ohne Kategorie') return -1;
-      return a[0].localeCompare(b[0], 'de');
+      if (a[0] === NO_CATEGORY) return 1;
+      if (b[0] === NO_CATEGORY) return -1;
+      return a[0].localeCompare(b[0], LOCALE);
     });
     jobsList.innerHTML = sortedGroups.map(([cat, jobs]) => {
       const failing = jobs.filter((j) => (j.runtime.consecutiveFailures || 0) >= 3).length;
-      const warn = failing ? ` · <span style="color:var(--error)">${failing} fehlerhaft</span>` : '';
+      const warn = failing ? ` · <span style="color:var(--error)">${t('{n} failing', { n: failing })}</span>` : '';
       const eingeklappt = eingeklappteKategorien.has(cat);
       return `<div class="job-group-head" data-kategorie="${escapeHtml(cat)}" role="button" tabindex="0" aria-expanded="${!eingeklappt}">`
         + `<span class="grp-chevron${eingeklappt ? ' eingeklappt' : ''}" aria-hidden="true">▾</span>`
-        + `${escapeHtml(cat)} <span class="grp-count">${jobs.length}${warn}</span></div>`
+        + `${escapeHtml(kategorieName(cat))} <span class="grp-count">${jobs.length}${warn}</span></div>`
         + `<div class="job-group-body${eingeklappt ? ' eingeklappt' : ''}">`
         + jobs.map((job) => renderJobCard(job, false)).join('') + `</div>`;
     }).join('');
@@ -423,7 +433,7 @@ function renderJobs(erzwingen = false) {
     jobsList.innerHTML = list.map((job) => renderJobCard(job, true)).join('');
   }
 
-  // Karten mit tatsächlich neu eingetroffener Übertragung kurz aufleuchten lassen
+  // Let cards with a newly arrived transfer light up briefly
   list.forEach((job) => {
     const neuester = logsCache.find((l) => l.jobId === job.id);
     const zeit = neuester ? neuester.ts : null;
@@ -442,21 +452,21 @@ function renderJobs(erzwingen = false) {
 }
 
 function lastSuccessHtml(job) {
-  if (!job.lastSuccess) return '<span class="last-success never">noch nie erfolgreich übertragen</span>';
+  if (!job.lastSuccess) return `<span class="last-success never">${t('never transferred successfully')}</span>`;
   const alter = Date.now() - new Date(job.lastSuccess.ts).getTime();
   const tage = alter / 86400000;
   const stunden = alter / 3600000;
   let text;
-  if (stunden < 1) text = 'vor wenigen Minuten';
-  else if (stunden < 24) text = `vor ${Math.round(stunden)} Std.`;
-  else text = `vor ${Math.round(tage)} Tag(en)`;
+  if (stunden < 1) text = t('a few minutes ago');
+  else if (stunden < 24) text = t('{n} h ago', { n: Math.round(stunden) });
+  else text = t('{n} day(s) ago', { n: Math.round(tage) });
   const klasse = tage > 2 ? 'stale' : '';
-  return `<span class="last-success ${klasse}">zuletzt erfolgreich: ${text} (${fmtDateTime(job.lastSuccess.ts)})</span>`;
+  return `<span class="last-success ${klasse}">${t('last success: {when} ({time})', { when: text, time: fmtDateTime(job.lastSuccess.ts) })}</span>`;
 }
 
 function zielBeschreibung(job) {
-  if (job.zielTyp === 'ordner') return job.zielOrdner || '(kein Zielordner)';
-  if (job.zielTyp === 'email') return `E-Mail an ${job.mailAn || '(kein Empfänger)'}`;
+  if (job.zielTyp === 'ordner') return job.zielOrdner || t('(no target folder)');
+  if (job.zielTyp === 'email') return t('E-mail to {to}', { to: job.mailAn || t('(no recipient)') });
   return job.targetUrl;
 }
 
@@ -473,38 +483,38 @@ function renderJobCard(job, showCategoryTag) {
   const st = statusOf(job);
   const pulse = pulseForJob(job.id, 20);
   const failures = job.runtime.consecutiveFailures || 0;
-  const failureBadge = failures >= 3 ? `<span class="failure-badge">⚠ ${failures}× in Folge fehlgeschlagen</span>` : '';
-  const pausedBadge = !job.active ? `<span class="paused-badge">Pausiert</span>` : '';
-  const outsideScheduleBadge = job.active && job.scheduleEnabled && !job.runtime.withinSchedule ? `<span class="paused-badge">Außerhalb Zeitfenster</span>` : '';
+  const failureBadge = failures >= 3 ? `<span class="failure-badge">⚠ ${t('{n}× failed in a row', { n: failures })}</span>` : '';
+  const pausedBadge = !job.active ? `<span class="paused-badge">${t('Paused')}</span>` : '';
+  const outsideScheduleBadge = job.active && job.scheduleEnabled && !job.runtime.withinSchedule ? `<span class="paused-badge">${t('Outside time window')}</span>` : '';
   const categoryTag = showCategoryTag && job.category ? `<span class="job-category-tag">${escapeHtml(job.category)}</span>` : '';
-  const dryRunBadge = job.dryRun ? '<span class="dryrun-badge">Testmodus</span>' : '';
+  const dryRunBadge = job.dryRun ? `<span class="dryrun-badge">${t('Test mode')}</span>` : '';
   const stapelBadge = job.stapelTeilen
-    ? '<span class="umwandlung-badge" title="Stapelscans werden an QR-Codes in Einzeldokumente getrennt">✂ Stapel</span>'
+    ? `<span class="umwandlung-badge" title="${t('Batch scans are split into single documents at the QR codes')}">✂ ${t('Batch')}</span>`
     : '';
   const umwandlungBadge = job.processor === 'pdf-qr-json'
-    ? `<span class="umwandlung-badge" title="PDF wird ausgewertet und als ${job.sendeFormat === 'multipart-metadata' ? 'multipart-Formular' : 'JSON'} gesendet">⇄ Umwandlung</span>`
+    ? `<span class="umwandlung-badge" title="${job.sendeFormat === 'multipart-metadata' ? t('The PDF is evaluated and sent as a multipart form') : t('The PDF is evaluated and sent as JSON')}">⇄ ${t('Conversion')}</span>`
     : '';
-  const archivedBadge = job.archived ? '<span class="archived-badge">Archiviert</span>' : '';
+  const archivedBadge = job.archived ? `<span class="archived-badge">${t('Archived')}</span>` : '';
   const noteHtml = job.notes ? `<div class="job-note">${escapeHtml(job.notes)}</div>` : '';
   const erfolg = lastSuccessHtml(job);
-  const multiTargetNote = (job.extraTargetUrls || []).length > 0 ? ` <span style="color:var(--accent)">+${job.extraTargetUrls.length} Ziel(e)</span>` : '';
-  const nextScan = job.active && job.runtime.nextDueTs ? `<span class="next-scan" data-due="${job.runtime.nextDueTs}"><span>nächster Scan</span> …</span>` : '';
-  const waitingNote = job.runtime.waitingCount > 0 ? ` · <span style="color:var(--warning)">${job.runtime.waitingCount} warten auf Ruhezeit</span>` : '';
+  const multiTargetNote = (job.extraTargetUrls || []).length > 0 ? ` <span style="color:var(--accent)">${t('+{n} target(s)', { n: job.extraTargetUrls.length })}</span>` : '';
+  const nextScan = job.active && job.runtime.nextDueTs ? `<span class="next-scan" data-due="${job.runtime.nextDueTs}"><span>${t('next scan')}</span> …</span>` : '';
+  const waitingNote = job.runtime.waitingCount > 0 ? ` · <span style="color:var(--warning)">${t('{n} waiting for settle time', { n: job.runtime.waitingCount })}</span>` : '';
 
-  // Welche Datei gerade läuft — der aussagekräftigste Hinweis während einer Übertragung
+  // Which file is running right now — the most meaningful hint during a transfer
   const inArbeit = job.runtime.inArbeit || [];
   const arbeitZeile = inArbeit.length === 0 ? '' : `
       <div class="in-arbeit">
         <span class="arbeit-spinner"></span>
         <span class="arbeit-text">
           ${escapeHtml(inArbeit[0].name)}
-          ${inArbeit.length > 1 ? `<span class="arbeit-weitere">und ${inArbeit.length - 1} weitere</span>` : ''}
+          ${inArbeit.length > 1 ? `<span class="arbeit-weitere">${t('and {n} more', { n: inArbeit.length - 1 })}</span>` : ''}
         </span>
         <span class="arbeit-dauer" data-seit="${inArbeit[0].seit}">…</span>
       </div>`;
   const isSorting = jobSort.value === 'manual';
   const selectBox = selectMode ? `<input type="checkbox" class="job-select" data-select="${job.id}" ${selectedIds.has(job.id) ? 'checked' : ''}>` : '';
-  const dragHandle = isSorting ? `<span class="drag-handle" title="Zum Sortieren ziehen"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="4" cy="2.5" r="1" fill="currentColor"/><circle cx="8" cy="2.5" r="1" fill="currentColor"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="8" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="9.5" r="1" fill="currentColor"/><circle cx="8" cy="9.5" r="1" fill="currentColor"/></svg></span>` : '';
+  const dragHandle = isSorting ? `<span class="drag-handle" title="${t('Drag to sort')}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="4" cy="2.5" r="1" fill="currentColor"/><circle cx="8" cy="2.5" r="1" fill="currentColor"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="8" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="9.5" r="1" fill="currentColor"/><circle cx="8" cy="9.5" r="1" fill="currentColor"/></svg></span>` : '';
   return `
     <div class="job-card ${job.active ? '' : 'inactive'} ${job.archived ? 'archived' : ''} status-${st} ${(job.runtime.consecutiveFailures || 0) >= 3 ? 'dringend' : ''} ${selectedIds.has(job.id) ? 'selected' : ''}" data-id="${job.id}" ${isSorting ? 'draggable="true"' : ''}>
       <div class="job-top">
@@ -512,35 +522,35 @@ function renderJobCard(job, showCategoryTag) {
         <span class="status-dot ${st}"></span>
         <span class="job-name">${escapeHtml(job.name)}</span>
         ${categoryTag}${umwandlungBadge}${stapelBadge}${dryRunBadge}${archivedBadge}${pausedBadge}${outsideScheduleBadge}
-        <span class="job-time" title="${job.runtime.lastRunTs ? escapeHtml(fmtDateTime(job.runtime.lastRunTs)) : ''}">${job.runtime.lastRunTs ? fmtRelativ(job.runtime.lastRunTs) : 'noch nie gelaufen'}</span>
+        <span class="job-time" title="${job.runtime.lastRunTs ? escapeHtml(fmtDateTime(job.runtime.lastRunTs)) : ''}">${job.runtime.lastRunTs ? fmtRelativ(job.runtime.lastRunTs) : t('never run')}</span>
       </div>
-      <p class="job-meta pfad-zeile" data-keine-uebersetzung title="${escapeHtml(job.sourcePath)} → ${escapeHtml(zielBeschreibung(job))}">
+      <p class="job-meta pfad-zeile" data-no-translate title=""${escapeHtml(job.sourcePath)} → ${escapeHtml(zielBeschreibung(job))}">
         <span class="pfad">${escapeHtml(job.sourcePath)}</span>
         <span class="job-arrow">→</span>
         <span class="pfad">${escapeHtml(zielBeschreibung(job))}</span>${multiTargetNote}${failureBadge}
       </p>
-      ${geteilteOrdnerJobs(job).length ? `<p class="job-meta job-shared-folder"><span>Teilt Ordner mit</span>: <span data-keine-uebersetzung>${geteilteOrdnerJobs(job).map(escapeHtml).join(', ')}</span></p>` : ''}
-      <p class="job-meta"><span>Filter</span>: <span data-keine-uebersetzung>${escapeHtml(job.filePattern)}</span> · <span>alle</span> ${job.pollIntervalSec}s${waitingNote} ${nextScan}</p>
+      ${geteilteOrdnerJobs(job).length ? `<p class="job-meta job-shared-folder"><span>${t('Shares the folder with')}</span>: <span data-no-translate>${geteilteOrdnerJobs(job).map(escapeHtml).join(', ')}</span></p>` : ''}
+      <p class="job-meta"><span>${t('Filter')}</span>: <span data-no-translate>${escapeHtml(job.filePattern)}</span> · <span>${t('every')}</span> ${job.pollIntervalSec}s${waitingNote} ${nextScan}</p>
       <p class="job-meta">${erfolg}</p>
       ${arbeitZeile}
       ${noteHtml}
-      <div class="pulse-row" title="Datenvolumen der letzten 7 Tage">
+      <div class="pulse-row" title="${t('Data volume of the last 7 days')}">
         ${renderPulseStrip(pulse)}
         ${sparklineSvg(volumenSparklineDaten(job.id))}
       </div>
       <div class="job-actions">
-        <button class="btn" data-action="run">Jetzt ausführen</button>
-        <button class="btn" data-action="toggle">${job.active ? 'Pausieren' : 'Aktivieren'}</button>
-        <button class="btn" data-action="edit">Bearbeiten</button>
+        <button class="btn" data-action="run">${t('Run now')}</button>
+        <button class="btn" data-action="toggle">${job.active ? t('Pause') : t('Activate')}</button>
+        <button class="btn" data-action="edit">${t('Edit')}</button>
         <div class="overflow-wrap">
-          <button class="btn" data-action="menu" aria-label="Weitere Aktionen">⋯</button>
+          <button class="btn" data-action="menu" aria-label="${t('More actions')}">⋯</button>
           <div class="overflow-menu hidden" data-card-menu>
-            <button class="menu-item" data-action="warteschlange"><span class="check"></span>Warteschlange …</button>
-            <button class="menu-item" data-action="duplicate"><span class="check"></span>Duplizieren</button>
+            <button class="menu-item" data-action="warteschlange"><span class="check"></span>${t('Queue …')}</button>
+            <button class="menu-item" data-action="duplicate"><span class="check"></span>${t('Duplicate')}</button>
             ${job.archived
-              ? '<button class="menu-item" data-action="unarchive"><span class="check"></span>Aus Archiv holen</button>'
-                + (darfVerwalten ? '<button class="menu-item" data-action="delete"><span class="check"></span>Endgültig löschen</button>' : '')
-              : '<button class="menu-item" data-action="archive"><span class="check"></span>Ins Archiv verschieben</button>'}
+              ? `<button class="menu-item" data-action="unarchive"><span class="check"></span>${t('Restore from archive')}</button>`
+                + (darfVerwalten ? `<button class="menu-item" data-action="delete"><span class="check"></span>${t('Delete permanently')}</button>` : '')
+              : `<button class="menu-item" data-action="archive"><span class="check"></span>${t('Move to archive')}</button>`}
           </div>
         </div>
       </div>
@@ -551,13 +561,13 @@ function tickCountdowns() {
 
   document.querySelectorAll('.arbeit-dauer[data-seit]').forEach((el) => {
     const s = Math.max(0, Math.round((Date.now() - Number(el.dataset.seit)) / 1000));
-    el.textContent = s < 60 ? `seit ${s}s` : `seit ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
+    el.textContent = s < 60 ? t('for {s}s', { s }) : t('for {time} min', { time: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` });
   });
   document.querySelectorAll('.next-scan[data-due]').forEach((el) => {
     const due = Number(el.dataset.due);
     const remaining = Math.round((due - Date.now()) / 1000);
-    if (remaining <= 0) { el.innerHTML = '<span>nächster Scan</span> …'; }
-    else { el.innerHTML = `<span>nächster Scan in</span> ${remaining}s`; }
+    if (remaining <= 0) { el.innerHTML = `<span>${t('next scan')}</span> …`; }
+    else { el.innerHTML = `<span>${t('next scan in')}</span> ${remaining}s`; }
   });
 }
 setInterval(tickCountdowns, 1000);
@@ -589,7 +599,7 @@ btnDensity.addEventListener('click', () => {
   renderJobs();
 });
 
-// Menüs schließen, sobald daneben geklickt wird
+// Close menus as soon as the user clicks elsewhere
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#view-menu') && !e.target.closest('#btn-view-menu')) viewMenu.classList.add('hidden');
   if (!e.target.closest('[data-card-menu]') && !e.target.closest('[data-action="menu"]')) {
@@ -598,7 +608,7 @@ document.addEventListener('click', (e) => {
 });
 syncViewToggles();
 
-// ---------- Mehrfachauswahl & Sammelaktionen ----------
+// ---------- Multi-select & bulk actions ----------
 
 const bulkBar = document.getElementById('bulk-bar');
 const btnSelectMode = document.getElementById('btn-toggle-select');
@@ -606,7 +616,7 @@ const btnSelectMode = document.getElementById('btn-toggle-select');
 function syncBulkBar() {
   btnSelectMode.classList.toggle('toggled', selectMode);
   bulkBar.classList.toggle('hidden', !selectMode);
-  document.getElementById('bulk-count').textContent = `${selectedIds.size} ausgewählt`;
+  document.getElementById('bulk-count').textContent = t('{n} selected', { n: selectedIds.size });
 }
 
 btnSelectMode.addEventListener('click', () => {
@@ -656,14 +666,14 @@ bulkBar.addEventListener('click', async (e) => {
   if (!btn) return;
   const action = btn.dataset.bulk;
   const ids = Array.from(selectedIds);
-  if (ids.length === 0) { showToast('Keine Jobs ausgewählt', 'error'); return; }
+  if (ids.length === 0) { showToast(t('No jobs selected'), 'error'); return; }
 
   if (action === 'setCategory') {
-    const cat = prompt(`Kategorie für ${ids.length} Job(s) setzen (leer = Zuordnung entfernen):`, '');
+    const cat = prompt(t('Set the category for {n} job(s) (empty = remove the assignment):', { n: ids.length }), '');
     if (cat === null) return;
     try {
       const r = await api('/jobs/bulk', { method: 'POST', body: JSON.stringify({ ids, action: 'setCategory', category: cat }) });
-      showToast(`Kategorie für ${r.affected} Job(s) gesetzt`, 'success');
+      showToast(t('Category set for {n} job(s)', { n: r.affected }), 'success');
       selectedIds.clear(); syncBulkBar();
       await loadJobs(); await loadStatus();
     } catch (err) { showToast(err.message, 'error'); }
@@ -672,11 +682,11 @@ bulkBar.addEventListener('click', async (e) => {
 
   if (action === 'delete') {
     askConfirm(
-      `${ids.length} Job(s) werden dauerhaft gelöscht. Bereits übertragene Dateien bleiben unberührt.`,
-      'Löschen',
+      t('{n} job(s) will be deleted permanently. Files that were already transferred are not affected.', { n: ids.length }),
+      t('Delete'),
       async () => {
         const r = await api('/jobs/bulk', { method: 'POST', body: JSON.stringify({ ids, action: 'delete' }) });
-        showToast(`${r.affected} Job(s) gelöscht`, 'success');
+        showToast(t('{n} job(s) deleted', { n: r.affected }), 'success');
         selectedIds.clear(); syncBulkBar();
         await loadJobs(); await loadStatus();
       });
@@ -685,12 +695,12 @@ bulkBar.addEventListener('click', async (e) => {
 
   try {
     const r = await api('/jobs/bulk', { method: 'POST', body: JSON.stringify({ ids, action }) });
-    showToast(`${r.affected} Job(s) ${action === 'activate' ? 'aktiviert' : 'pausiert'}`, 'success');
+    showToast(action === 'activate' ? t('{n} job(s) activated', { n: r.affected }) : t('{n} job(s) paused', { n: r.affected }), 'success');
     await loadJobs(); await loadStatus();
   } catch (err) { showToast(err.message, 'error'); }
 });
 
-// ---------- Drag & Drop (eigene Reihenfolge) ----------
+// ---------- Drag & drop (custom order) ----------
 
 jobsList.addEventListener('dragstart', (e) => {
   const card = e.target.closest('.job-card[draggable="true"]');
@@ -732,38 +742,38 @@ jobsList.addEventListener('dragend', () => {
   draggedId = null;
 });
 
-// ---------- Log-Stream rendern ----------
+// ---------- Rendering the log stream ----------
 
 function renderLogEntry(l) {
   const full = l.message || '';
   const isLong = full.length > 160;
   const shortText = full.slice(0, 160);
-  // Erneut senden ist auch bei erfolgreichen Übertragungen möglich —
-  // dort aber zurückhaltend gestaltet und mit Sicherheitsabfrage, damit
-  // nichts versehentlich doppelt bei der Gegenstelle landet.
+  // Sending again is also possible for successful transfers —
+  // but shown discreetly there and with a confirmation, so that
+  // nothing ends up at the receiving side twice by accident.
   const warErfolg = l.status === 'success';
   const retryBtn = l.file && l.jobId
-    ? `<button class="retry-btn${warErfolg ? ' erneut-erfolg' : ''}" data-retry-job="${l.jobId}" data-retry-file="${escapeHtml(l.file)}" data-retry-erfolg="${warErfolg ? '1' : ''}" title="${warErfolg ? 'Diese bereits erfolgreich übertragene Datei nochmals senden' : 'Diese Datei erneut senden'}">↻ ${warErfolg ? 'nochmals senden' : 'erneut senden'}</button>`
+    ? `<button class="retry-btn${warErfolg ? ' erneut-erfolg' : ''}" data-retry-job="${l.jobId}" data-retry-file="${escapeHtml(l.file)}" data-retry-erfolg="${warErfolg ? '1' : ''}" title="${warErfolg ? t('Send this already transferred file again') : t('Resend this file')}">↻ ${warErfolg ? t('send again') : t('resend')}</button>`
     : '';
   const downloadBtn = l.file && l.jobId
-    ? `<a class="retry-btn download-btn" href="/api/download?jobId=${encodeURIComponent(l.jobId)}&file=${encodeURIComponent(l.file)}" title="Datei herunterladen">↓ herunterladen</a>`
+    ? `<a class="retry-btn download-btn" href="/api/download?jobId=${encodeURIComponent(l.jobId)}&file=${encodeURIComponent(l.file)}" title="${t('Download file')}">↓ ${t('download')}</a>`
     : '';
-  // Nur bei Einträgen, die aus einer Umwandlung stammen — sonst ist der
-  // Knopf überall und stiftet mehr Unruhe als Nutzen.
+  // Only for entries that come from a conversion — otherwise the
+  // button is everywhere and causes more clutter than it helps.
   const ausUmwandlung = l.qrGefunden !== undefined || l.gesendeteMetadaten !== undefined;
   const pruefBtn = ausUmwandlung && l.file && l.jobId
-    ? `<button class="retry-btn" data-pruef-job="${l.jobId}" data-pruef-file="${escapeHtml(l.file)}" title="Zeigt, welche Daten für diese Datei gesendet werden">⌕ gesendete Daten</button>`
+    ? `<button class="retry-btn" data-pruef-job="${l.jobId}" data-pruef-file="${escapeHtml(l.file)}" title="${t('Shows which data is sent for this file')}">⌕ ${t('sent data')}</button>`
     : '';
   return `
     <div class="log-entry">
       <span class="dot ${l.status}"></span>
       <span class="log-time">${fmtTime(l.ts)}</span>
       <span class="log-main">
-        <span class="file">${escapeHtml(l.file || '(Ordner-Fehler)')}</span> · <span class="job">${escapeHtml(l.jobName)}</span>
-        <span class="msg" data-full="${escapeHtml(full)}" data-short="${escapeHtml(shortText)}">${escapeHtml(shortText)}${isLong ? '<span class="expand-hint">mehr anzeigen</span>' : ''}</span>
+        <span class="file">${escapeHtml(l.file || t('(folder error)'))}</span> · <span class="job">${escapeHtml(l.jobName)}</span>
+        <span class="msg" data-full="${escapeHtml(full)}" data-short="${escapeHtml(shortText)}">${escapeHtml(shortText)}${isLong ? `<span class="expand-hint">${t('show more')}</span>` : ''}</span>
         ${retryBtn}${downloadBtn}${pruefBtn}
       </span>
-      <span class="log-status ${l.status}">${l.httpStatus ? 'HTTP ' + l.httpStatus : (l.status === 'error' ? 'Fehler' : '')}</span>
+      <span class="log-status ${l.status}">${l.httpStatus ? 'HTTP ' + l.httpStatus : (l.status === 'error' ? t('Error') : '')}</span>
     </div>`;
 }
 
@@ -777,11 +787,11 @@ async function handleRetryClick(e) {
 
   const senden = async () => {
     btn.disabled = true;
-    btn.textContent = 'sende …';
+    btn.textContent = t('sending …');
     try {
       const result = await api('/logs/retry', { method: 'POST', body: JSON.stringify({ jobId, file }) });
       showToast(
-        result.ok ? `„${file}" erneut gesendet` : `Erneuter Versuch fehlgeschlagen: ${result.message}`,
+        result.ok ? t('“{file}” resent', { file }) : t('Retry failed: {error}', { error: result.message }),
         result.ok ? 'success' : 'error',
       );
     } catch (err) {
@@ -796,42 +806,40 @@ async function handleRetryClick(e) {
     }
   };
 
-  // Bei bereits erfolgreichen Übertragungen nachfragen: Die Gegenstelle
-  // bekommt die Datei dann ein zweites Mal.
+  // Ask for successful transfers: the receiving side then
+  // gets the file a second time.
   if (warErfolg) {
     const job = jobsCache.find((j) => j.id === jobId);
     askConfirm(
-      `„${file}" wurde bereits erfolgreich übertragen. Beim nochmaligen Senden erhält `
-      + `${job ? `„${job.name}"` : 'die Gegenstelle'} die Datei ein zweites Mal — dort können `
-      + 'dadurch doppelte Datensätze entstehen.'
-      + (job && job.dedupe ? ' Hinweis: Für diesen Job ist die Duplikatprüfung aktiv; sie greift beim manuellen Senden nicht.' : ''),
-      'Nochmals senden',
+      t('“{file}” was already transferred successfully. If you send it again, the receiving side gets the file a second time — this can create duplicate records there.', { file })
+      + (job && job.dedupe ? ' ' + t('Note: duplicate detection is active for this job; it does not apply to manual sending.') : ''),
+      t('Send again'),
       senden,
-      'Datei nochmals senden?',
+      t('Send the file again?'),
     );
     return;
   }
   await senden();
 }
 
-// Ist eine Suche aktiv, zeigt das Protokoll Treffer vom Server statt der
-// laufend aktualisierten letzten 500 Einträge — so findet die Suche auch
-// länger zurückliegende Übertragungen, nicht nur die zuletzt geladenen.
+// While a search is active, the log shows matches from the server instead of
+// the continuously updated last 500 entries — this way the search also finds
+// older transfers, not only the ones loaded most recently.
 let logSucheAktiv = false;
 let logSucheLaeuft = 0;
 
 function renderLogs() {
-  if (logSucheAktiv) return; // Live-Aktualisierung pausiert, solange gesucht wird
+  if (logSucheAktiv) return; // live updating is paused while searching
   let logs = logsCache;
   if (filterJob.value) logs = logs.filter((l) => l.jobId === filterJob.value);
   if (filterStatus.value) logs = logs.filter((l) => l.status === filterStatus.value);
 
   if (logs.length === 0) {
     letzteLogSignatur = 'leer';
-    logStream.innerHTML = `<div class="empty-state"><p>Noch keine Einträge.</p></div>`;
+    logStream.innerHTML = `<div class="empty-state"><p>${t('No entries yet.')}</p></div>`;
     return;
   }
-  // Auch hier: nur bei tatsächlicher Änderung neu aufbauen
+  // Here too: only rebuild on an actual change
   const logSig = JSON.stringify(logs.slice(0, 200).map((l) => [l.ts, l.file, l.status, l.httpStatus, l.jobId]));
   if (logSig === letzteLogSignatur && logStream.querySelector('.log-entry')) return;
   letzteLogSignatur = logSig;
@@ -843,7 +851,7 @@ async function fuehreLogSucheAus() {
   const begriff = logSearch.value.trim();
   if (!begriff) {
     logSucheAktiv = false;
-    letzteLogSignatur = null; // erzwingt einen sauberen Neuaufbau der Live-Ansicht
+    letzteLogSignatur = null; // forces a clean rebuild of the live view
     renderLogs();
     return;
   }
@@ -856,12 +864,12 @@ async function fuehreLogSucheAus() {
   try {
     treffer = await api('/logs?' + params.toString());
   } catch {
-    return; // z. B. kurzzeitig nicht angemeldet — nächste Eingabe versucht es erneut
+    return; // e.g. briefly not signed in — the next input tries again
   }
-  if (laufNr !== logSucheLaeuft) return; // zwischenzeitlich neu gesucht — dieses Ergebnis verwerfen
-  logStream.innerHTML = `<p class="log-such-status">${treffer.length} ${t('Treffer für')} „${escapeHtml(begriff)}“</p>`
+  if (laufNr !== logSucheLaeuft) return; // searched again in the meantime — discard this result
+  logStream.innerHTML = `<p class="log-such-status">${t('{n} matches for “{term}”', { n: treffer.length, term: escapeHtml(begriff) })}</p>`
     + (treffer.length === 0
-      ? `<div class="empty-state"><p>${t('Keine Treffer — anderen Suchbegriff versuchen.')}</p></div>`
+      ? `<div class="empty-state"><p>${t('No matches — try another search term.')}</p></div>`
       : treffer.map(renderLogEntry).join(''));
 }
 
@@ -877,8 +885,8 @@ logStream.addEventListener('click', (e) => {
   if (!msg) return;
   const expanded = msg.classList.toggle('expanded');
   msg.innerHTML = expanded
-    ? escapeHtml(msg.dataset.full) + '<span class="expand-hint">weniger anzeigen</span>'
-    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? '<span class="expand-hint">mehr anzeigen</span>' : '');
+    ? escapeHtml(msg.dataset.full) + `<span class="expand-hint">${t('show less')}</span>`
+    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? `<span class="expand-hint">${t('show more')}</span>` : '');
 });
 
 filterJob.addEventListener('change', () => (logSucheAktiv ? fuehreLogSucheAus() : renderLogs()));
@@ -889,26 +897,27 @@ document.getElementById('btn-export-logs').addEventListener('click', () => {
   if (filterJob.value) params.set('jobId', filterJob.value);
   if (filterStatus.value) params.set('status', filterStatus.value);
   if (logSucheAktiv && logSearch.value.trim()) params.set('q', logSearch.value.trim());
+  params.set('lang', SPRACHE);
   window.open('/api/logs/export?' + params.toString(), '_blank');
 });
 
 document.getElementById('btn-export-stats').addEventListener('click', () => {
-  window.open('/api/stats/export?days=' + aktiverZeitraum, '_blank');
+  window.open(`/api/stats/export?days=${aktiverZeitraum}&lang=${SPRACHE}`, '_blank');
 });
 
 document.getElementById('btn-reset-stats').addEventListener('click', () => {
   askConfirm(
-    'Das gesamte Übertragungsprotokoll wird unwiderruflich gelöscht — inklusive Statistik-Verlauf, Aktivitätsstreifen und Fehler-Zähler auf den Job-Karten. Jobs und deren Einstellungen bleiben erhalten.',
-    'Zurücksetzen',
+    t('The entire transfer log will be deleted irrevocably — including the statistics history, activity strips and error counters on the job cards. Jobs and their settings are kept.'),
+    t('Reset'),
     async () => {
       await api('/logs', { method: 'DELETE' });
-      showToast('Protokoll und Statistik zurückgesetzt', 'success');
+      showToast(t('Log and statistics reset'), 'success');
       await zeigeSkelett();
 refreshAll();
     });
 });
 
-// ---------- Sparklines (Erfolg/Fehler-Trend) ----------
+// ---------- Sparklines (success/error trend) ----------
 
 function renderSparklines(perDay) {
   drawSparkline('spark-success', perDay.map((d) => d.success), 'var(--success)');
@@ -924,7 +933,7 @@ function drawSparkline(id, values, color) {
   svg.innerHTML = `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
 
-// ---------- Job-Aktionen (Karten) ----------
+// ---------- Job actions (cards) ----------
 
 jobsList.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
@@ -948,35 +957,35 @@ jobsList.addEventListener('click', async (e) => {
   try {
     if (action === 'run') {
       await api(`/jobs/${id}/run-now`, { method: 'POST' });
-      showToast(`"${job.name}" wird ausgeführt …`, 'info');
+      showToast(t('“{job}” is running …', { job: job.name }), 'info');
     } else if (action === 'toggle') {
       await api(`/jobs/${id}/toggle`, { method: 'POST' });
-      showToast(job.active ? `"${job.name}" pausiert` : `"${job.name}" aktiviert`, 'info');
+      showToast(job.active ? t('“{job}” paused', { job: job.name }) : t('“{job}” activated', { job: job.name }), 'info');
     } else if (action === 'edit') {
       openModal(job);
     } else if (action === 'warteschlange') {
       zeigeWarteschlange(job.id, job.name);
     } else if (action === 'duplicate') {
       const { id: _oldId, runtime: _rt, authPasswordSet: _aps, ...jobData } = job;
-      const copy = await api('/jobs', { method: 'POST', body: JSON.stringify({ ...jobData, name: job.name + ' (Kopie)' }) });
-      showToast(job.authPasswordSet ? `"${job.name}" dupliziert — Passwort bitte erneut eintragen` : `"${job.name}" dupliziert`, 'success');
+      const copy = await api('/jobs', { method: 'POST', body: JSON.stringify({ ...jobData, name: job.name + ' ' + t('(copy)') }) });
+      showToast(job.authPasswordSet ? t('“{job}” duplicated — please enter the password again', { job: job.name }) : t('“{job}” duplicated', { job: job.name }), 'success');
       await loadJobs();
       openModal(jobsCache.find((j) => j.id === copy.id));
     } else if (action === 'archive') {
       await api(`/jobs/${job.id}/archive`, { method: 'POST', body: JSON.stringify({ archived: true }) });
-      showToast(`"${job.name}" ins Archiv verschoben`, 'info');
+      showToast(t('“{job}” moved to the archive', { job: job.name }), 'info');
       await loadJobs(); await loadStatus();
     } else if (action === 'unarchive') {
       await api(`/jobs/${job.id}/archive`, { method: 'POST', body: JSON.stringify({ archived: false }) });
-      showToast(`"${job.name}" aus dem Archiv geholt — noch pausiert`, 'success');
+      showToast(t('“{job}” restored from the archive — still paused', { job: job.name }), 'success');
       await loadJobs(); await loadStatus();
     } else if (action === 'delete') {
       askConfirm(
-        `Job "${job.name}" wird dauerhaft gelöscht. Bereits übertragene Dateien bleiben unberührt.`,
-        'Löschen',
+        t('Job “{job}” will be deleted permanently. Files that were already transferred are not affected.', { job: job.name }),
+        t('Delete'),
         async () => {
           await api(`/jobs/${job.id}`, { method: 'DELETE' });
-          showToast(`"${job.name}" gelöscht`, 'success');
+          showToast(t('“{job}” deleted', { job: job.name }), 'success');
           await loadJobs();
         });
     }
@@ -989,12 +998,12 @@ jobsList.addEventListener('click', async (e) => {
 function askConfirm(text, okLabel, action, titel) {
   confirmText.textContent = text;
   confirmOk.textContent = okLabel;
-  // Überschrift zur Aktion passend — sonst steht über jeder Rückfrage
-  // „Wirklich löschen?", auch wenn nichts gelöscht wird.
+  // Heading that matches the action — otherwise every prompt would say
+  // “Really delete?”, even when nothing is deleted.
   const kopf = document.getElementById('confirm-title');
   if (kopf) kopf.textContent = titel || `${okLabel}?`;
-  // Nur echte Löschvorgänge in Warnfarbe
-  const loeschend = /löschen|entfernen|zurücksetzen/i.test(okLabel);
+  // Only real delete operations in the warning colour
+  const loeschend = /löschen|entfernen|zurücksetzen|delete|remove|reset/i.test(okLabel);
   confirmOk.classList.toggle('btn-danger', loeschend);
   confirmOk.classList.toggle('btn-primary', !loeschend);
   pendingConfirmAction = action;
@@ -1003,11 +1012,11 @@ function askConfirm(text, okLabel, action, titel) {
 function closeConfirm() {
   confirmBackdrop.classList.remove('open');
   pendingConfirmAction = null;
-  confirmOk.textContent = 'Löschen';
+  confirmOk.textContent = t('Delete');
   confirmOk.classList.add('btn-danger');
   confirmOk.classList.remove('btn-primary');
   const kopf = document.getElementById('confirm-title');
-  if (kopf) kopf.textContent = 'Wirklich löschen?';
+  if (kopf) kopf.textContent = t('Really delete?');
 }
 
 confirmCancel.addEventListener('click', closeConfirm);
@@ -1022,67 +1031,69 @@ confirmOk.addEventListener('click', async () => {
   closeConfirm();
 });
 
-// ---------- Drawer (Job-Details) ----------
+// ---------- Drawer (job details) ----------
 
-// Fasst die wichtigsten Signale eines Jobs zu einem einzigen Zustand
-// zusammen — praktischer als drei einzelne Werte nachzusehen.
+// Combines the most important signals of a job into a single state
+// — more practical than looking up three separate values.
 function berechneJobHealth(job) {
-  if (!job.active) return { klasse: 'pausiert', text: 'Pausiert' };
+  if (!job.active) return { klasse: 'pausiert', text: 'Paused' };
   const failures = job.runtime.consecutiveFailures || 0;
-  if (failures >= 3) return { klasse: 'kritisch', text: 'Kritisch' };
+  if (failures >= 3) return { klasse: 'kritisch', text: 'Critical' };
 
   const letzterErfolg = job.lastSuccess ? new Date(job.lastSuccess.ts).getTime() : null;
-  // Überfällig ab dem Zehnfachen des Scan-Intervalls, mindestens aber 24 Stunden —
-  // damit selten laufende Jobs nicht dauerhaft fälschlich als kritisch gelten.
+  // Overdue from ten times the scan interval, but at least 24 hours —
+  // so that rarely running jobs are not permanently flagged as critical by mistake.
   const schwelle = Math.max((job.pollIntervalSec || 60) * 10 * 1000, 24 * 60 * 60 * 1000);
-  if (letzterErfolg === null) return { klasse: 'beobachten', text: 'Noch keine Übertragung' };
-  if (Date.now() - letzterErfolg > schwelle) return { klasse: 'beobachten', text: 'Länger keine Übertragung' };
-  if (failures > 0) return { klasse: 'beobachten', text: 'Beobachten' };
-  return { klasse: 'gut', text: 'Gut' };
+  if (letzterErfolg === null) return { klasse: 'beobachten', text: 'No transfer yet' };
+  if (Date.now() - letzterErfolg > schwelle) return { klasse: 'beobachten', text: 'No transfer for a while' };
+  if (failures > 0) return { klasse: 'beobachten', text: 'Keep an eye on it' };
+  return { klasse: 'gut', text: 'Good' };
 }
 
 function copyRow(label, value) {
-  return `<div class="drawer-meta-row"><span class="k">${label}</span><span class="v">${escapeHtml(value)}<button type="button" class="copy-btn" data-copy="${escapeHtml(value)}" title="Kopieren" aria-label="${label} kopieren"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" stroke-width="1.1"/><path d="M2.5 8.5v-6A1 1 0 0 1 3.5 1.5h6" stroke="currentColor" stroke-width="1.1"/></svg></button></span></div>`;
+  return `<div class="drawer-meta-row"><span class="k">${label}</span><span class="v">${escapeHtml(value)}<button type="button" class="copy-btn" data-copy="${escapeHtml(value)}" title="${t('Copy')}" aria-label="${t('Copy {what}', { what: label })}"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" stroke-width="1.1"/><path d="M2.5 8.5v-6A1 1 0 0 1 3.5 1.5h6" stroke="currentColor" stroke-width="1.1"/></svg></button></span></div>`;
 }
+
+const STATUS_TEXT = { running: 'running', success: 'success', error: 'error', idle: 'idle' };
+const WOCHENTAG = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
 
 function detailMetaHtml(job) {
   const st = statusOf(job);
   const health = berechneJobHealth(job);
   return `
     <div class="health-badge health-${health.klasse}"><span>${t(health.text)}</span></div>
-    <div class="drawer-meta-row"><span class="k">Status</span><span class="v">${job.active ? st : 'pausiert'}</span></div>
-    ${(job.runtime.inArbeit || []).length ? `<div class="drawer-meta-row"><span class="k">Gerade in Arbeit</span><span class="v" style="color:var(--accent);text-align:right">${job.runtime.inArbeit.map((d) => escapeHtml(d.name)).join('<br>')}</span></div>` : ''}
-    <div class="drawer-meta-row"><span class="k">Kategorie</span><span class="v">${escapeHtml(job.category || '– keine –')}</span></div>
-    <div class="drawer-meta-row"><span class="k">Zuletzt erfolgreich</span><span class="v">${job.lastSuccess ? fmtDateTime(job.lastSuccess.ts) + ' (' + escapeHtml(job.lastSuccess.file || '') + ')' : '– noch nie –'}</span></div>
-    ${job.archived ? `<div class="drawer-meta-row"><span class="k">Archiviert</span><span class="v">seit ${fmtDateTime(job.archivedAt)}</span></div>` : ''}
-    ${job.notes ? `<div class="drawer-meta-row" style="flex-direction:column;align-items:flex-start;gap:5px"><span class="k">Notiz</span><span class="v" style="text-align:left;font-family:var(--font-sans);white-space:pre-wrap;justify-content:flex-start">${escapeHtml(job.notes)}</span></div>` : ''}
-    ${copyRow('Quell-Ordner', job.sourcePath)}
-    <div class="drawer-meta-row"><span class="k">Dateifilter</span><span class="v">${escapeHtml(job.filePattern)}</span></div>
-    ${copyRow('Ziel-URL', job.targetUrl)}
-    <div class="drawer-meta-row"><span class="k">Methode</span><span class="v">${job.method}</span></div>
-    <div class="drawer-meta-row"><span class="k">Authentifizierung</span><span class="v">${job.authType === 'basic' ? `Basic-Auth (${escapeHtml(job.authUser || '–')})` : 'Keine'}</span></div>
-    <div class="drawer-meta-row"><span class="k">Scan-Intervall</span><span class="v">${job.pollIntervalSec}s</span></div>
-    ${job.processor === 'pdf-qr-json' ? `<div class="drawer-meta-row"><span class="k">Verarbeitung</span><span class="v">PDF → JSON (QR auf Seite ${job.qrSeite}, ${job.qrDpi} dpi)</span></div>` : ''}
-    ${job.dryRun ? '<div class="drawer-meta-row"><span class="k">Testmodus</span><span class="v" style="color:var(--warning)">aktiv — es wird nichts gesendet</span></div>' : ''}
-    ${job.dedupe ? '<div class="drawer-meta-row"><span class="k">Duplikate</span><span class="v">werden abgewiesen</span></div>' : ''}
-    ${(job.extraTargetUrls || []).length ? `<div class="drawer-meta-row"><span class="k">Zusatzziele</span><span class="v">${job.extraTargetUrls.map(escapeHtml).join('<br>')}</span></div>` : ''}
-    ${job.archiveRetentionDays > 0 ? `<div class="drawer-meta-row"><span class="k">Archiv aufräumen</span><span class="v">nach ${job.archiveRetentionDays} Tagen</span></div>` : ''}
-    ${job.minFileAgeSec > 0 ? `<div class="drawer-meta-row"><span class="k">Ruhezeit</span><span class="v">${job.minFileAgeSec}s unverändert</span></div>` : ''}
-    ${job.maxFileSizeMB > 0 ? `<div class="drawer-meta-row"><span class="k">Max. Dateigröße</span><span class="v">${job.maxFileSizeMB} MB</span></div>` : ''}
-    ${job.scheduleEnabled ? `<div class="drawer-meta-row"><span class="k">Zeitfenster</span><span class="v">${(job.activeDays || []).join(' ')} · ${job.timeStart}–${job.timeEnd}</span></div>` : ''}
-    <div class="drawer-meta-row"><span class="k">Bei Erfolg</span><span class="v">${job.onSuccess === 'archive' ? '→ ' + job.archiveSubfolder : 'Datei belassen'}</span></div>
-    <div class="drawer-meta-row"><span class="k">Bei Fehler</span><span class="v">${job.onError === 'archive' ? '→ ' + job.errorSubfolder : 'Datei belassen'}</span></div>
-    ${job.runtime.consecutiveFailures >= 3 ? `<div class="drawer-meta-row"><span class="k">Fehler-Streak</span><span class="v" style="color:var(--error)">${job.runtime.consecutiveFailures}× in Folge</span></div>` : ''}
+    <div class="drawer-meta-row"><span class="k">${t('Status')}</span><span class="v">${job.active ? t(STATUS_TEXT[st] || st) : t('paused')}</span></div>
+    ${(job.runtime.inArbeit || []).length ? `<div class="drawer-meta-row"><span class="k">${t('In progress')}</span><span class="v" style="color:var(--accent);text-align:right">${job.runtime.inArbeit.map((d) => escapeHtml(d.name)).join('<br>')}</span></div>` : ''}
+    <div class="drawer-meta-row"><span class="k">${t('Category')}</span><span class="v">${escapeHtml(job.category || t('– none –'))}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('Last success')}</span><span class="v">${job.lastSuccess ? fmtDateTime(job.lastSuccess.ts) + ' (' + escapeHtml(job.lastSuccess.file || '') + ')' : t('– never –')}</span></div>
+    ${job.archived ? `<div class="drawer-meta-row"><span class="k">${t('Archived')}</span><span class="v">${t('since {time}', { time: fmtDateTime(job.archivedAt) })}</span></div>` : ''}
+    ${job.notes ? `<div class="drawer-meta-row" style="flex-direction:column;align-items:flex-start;gap:5px"><span class="k">${t('Note')}</span><span class="v" style="text-align:left;font-family:var(--font-sans);white-space:pre-wrap;justify-content:flex-start">${escapeHtml(job.notes)}</span></div>` : ''}
+    ${copyRow(t('Source folder'), job.sourcePath)}
+    <div class="drawer-meta-row"><span class="k">${t('File filter')}</span><span class="v">${escapeHtml(job.filePattern)}</span></div>
+    ${copyRow(t('Target URL'), job.targetUrl)}
+    <div class="drawer-meta-row"><span class="k">${t('Method')}</span><span class="v">${job.method}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('Authentication')}</span><span class="v">${job.authType === 'basic' ? `Basic Auth (${escapeHtml(job.authUser || '–')})` : t('None')}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('Scan interval')}</span><span class="v">${job.pollIntervalSec}s</span></div>
+    ${job.processor === 'pdf-qr-json' ? `<div class="drawer-meta-row"><span class="k">${t('Processing')}</span><span class="v">${t('PDF → JSON (QR on page {page}, {dpi} dpi)', { page: job.qrSeite, dpi: job.qrDpi })}</span></div>` : ''}
+    ${job.dryRun ? `<div class="drawer-meta-row"><span class="k">${t('Test mode')}</span><span class="v" style="color:var(--warning)">${t('active — nothing is sent')}</span></div>` : ''}
+    ${job.dedupe ? `<div class="drawer-meta-row"><span class="k">${t('Duplicates')}</span><span class="v">${t('are rejected')}</span></div>` : ''}
+    ${(job.extraTargetUrls || []).length ? `<div class="drawer-meta-row"><span class="k">${t('Additional targets')}</span><span class="v">${job.extraTargetUrls.map(escapeHtml).join('<br>')}</span></div>` : ''}
+    ${job.archiveRetentionDays > 0 ? `<div class="drawer-meta-row"><span class="k">${t('Clean up archive')}</span><span class="v">${t('after {n} days', { n: job.archiveRetentionDays })}</span></div>` : ''}
+    ${job.minFileAgeSec > 0 ? `<div class="drawer-meta-row"><span class="k">${t('Settle time')}</span><span class="v">${t('{n}s unchanged', { n: job.minFileAgeSec })}</span></div>` : ''}
+    ${job.maxFileSizeMB > 0 ? `<div class="drawer-meta-row"><span class="k">${t('Max. file size')}</span><span class="v">${job.maxFileSizeMB} MB</span></div>` : ''}
+    ${job.scheduleEnabled ? `<div class="drawer-meta-row"><span class="k">${t('Time window')}</span><span class="v">${(job.activeDays || []).map((d) => t(WOCHENTAG[d] || d)).join(' ')} · ${job.timeStart}–${job.timeEnd}</span></div>` : ''}
+    <div class="drawer-meta-row"><span class="k">${t('On success')}</span><span class="v">${job.onSuccess === 'archive' ? '→ ' + job.archiveSubfolder : t('Leave file')}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('On error')}</span><span class="v">${job.onError === 'archive' ? '→ ' + job.errorSubfolder : t('Leave file')}</span></div>
+    ${job.runtime.consecutiveFailures >= 3 ? `<div class="drawer-meta-row"><span class="k">${t('Error streak')}</span><span class="v" style="color:var(--error)">${t('{n}× in a row', { n: job.runtime.consecutiveFailures })}</span></div>` : ''}
   `;
 }
 
-// Holt den Verlauf gezielt für genau diesen Job vom Server — unabhängig
-// davon, wie viele andere Jobs zuletzt protokolliert haben. logsCache ist
-// auf die letzten 500 Einträge über alle Jobs hinweg gedeckelt; bei vielen
-// aktiven Jobs (besonders kurz nach einem Neustart, wenn alle gleichzeitig
-// laufen) können die Einträge eines ruhigeren Jobs daraus herausfallen,
-// obwohl sie im Protokoll selbst noch vorhanden sind — genau das sah in der
-// Detailansicht dann so aus, als wären die Übertragungen verschwunden.
+// Fetches the history for exactly this job from the server — regardless
+// of how many other jobs logged recently. logsCache is capped at the last
+// 500 entries across all jobs; with many active jobs (especially shortly
+// after a restart, when all run at the same time) the entries of a quieter
+// job can drop out of it even though they are still in the log itself —
+// in the detail view that looked as if the transfers had disappeared.
 async function ladeJobVerlauf(jobId, limit = 100) {
   try { return await api(`/logs?jobId=${jobId}&limit=${limit}`); } catch { return []; }
 }
@@ -1091,12 +1102,12 @@ function detailBodyHtml(job, jobLogs, pulse) {
   return `
     <div class="drawer-section">${detailMetaHtml(job)}</div>
     <div class="drawer-section">
-      <p class="drawer-section-title">Aktivität (letzte Läufe)</p>
+      <p class="drawer-section-title">${t('Activity (recent runs)')}</p>
       <div class="pulse-strip pulse-strip-lg">${pulseBarsHtml(pulse)}</div>
     </div>
     <div class="drawer-section">
-      <p class="drawer-section-title">Verlauf</p>
-      <div class="log-stream">${jobLogs.length === 0 ? '<div class="empty-state"><p>Noch keine Übertragungen.</p></div>' : jobLogs.map(renderLogEntry).join('')}</div>
+      <p class="drawer-section-title">${t('History')}</p>
+      <div class="log-stream">${jobLogs.length === 0 ? `<div class="empty-state"><p>${t('No transfers yet.')}</p></div>` : jobLogs.map(renderLogEntry).join('')}</div>
     </div>`;
 }
 
@@ -1107,7 +1118,7 @@ function useDockedDetail() {
 async function openDrawer(job) {
   currentDetailJobId = job.id;
   const jobLogs = await ladeJobVerlauf(job.id, 100);
-  if (currentDetailJobId !== job.id) return; // inzwischen ein anderer Job geöffnet — dieses Ergebnis verwerfen
+  if (currentDetailJobId !== job.id) return; // another job was opened in the meantime — discard this result
   const pulse = jobLogs.slice(0, 60).reverse();
   if (useDockedDetail()) {
     document.querySelector('#tab-uebersicht .layout').classList.add('with-detail');
@@ -1119,7 +1130,7 @@ async function openDrawer(job) {
   drawerTitle.textContent = job.name;
   drawerMeta.innerHTML = detailMetaHtml(job);
   drawerPulse.innerHTML = pulseBarsHtml(pulse);
-  drawerLog.innerHTML = jobLogs.length === 0 ? '<div class="empty-state"><p>Noch keine Übertragungen.</p></div>' : jobLogs.map(renderLogEntry).join('');
+  drawerLog.innerHTML = jobLogs.length === 0 ? `<div class="empty-state"><p>${t('No transfers yet.')}</p></div>` : jobLogs.map(renderLogEntry).join('');
   drawerBackdrop.classList.add('open');
 }
 
@@ -1138,8 +1149,8 @@ document.getElementById('detail-column').addEventListener('click', (e) => {
   if (!msg) return;
   const expanded = msg.classList.toggle('expanded');
   msg.innerHTML = expanded
-    ? escapeHtml(msg.dataset.full) + '<span class="expand-hint">weniger anzeigen</span>'
-    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? '<span class="expand-hint">mehr anzeigen</span>' : '');
+    ? escapeHtml(msg.dataset.full) + `<span class="expand-hint">${t('show less')}</span>`
+    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? `<span class="expand-hint">${t('show more')}</span>` : '');
 });
 
 document.getElementById('drawer-close').addEventListener('click', closeDetail);
@@ -1154,19 +1165,19 @@ drawerLog.addEventListener('click', (e) => {
   if (!msg) return;
   const expanded = msg.classList.toggle('expanded');
   msg.innerHTML = expanded
-    ? escapeHtml(msg.dataset.full) + '<span class="expand-hint">weniger anzeigen</span>'
-    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? '<span class="expand-hint">mehr anzeigen</span>' : '');
+    ? escapeHtml(msg.dataset.full) + `<span class="expand-hint">${t('show less')}</span>`
+    : escapeHtml(msg.dataset.short) + (msg.dataset.full.length > 160 ? `<span class="expand-hint">${t('show more')}</span>` : '');
 });
 
-// ---------- Job-Formular (Anlegen/Bearbeiten) ----------
+// ---------- Job form (create/edit) ----------
 
 function openModal(job) {
   form.reset();
   document.getElementById('f-id').value = job ? job.id : '';
-  modalTitle.textContent = job ? 'Job bearbeiten' : 'Neuer Job';
+  modalTitle.textContent = job ? t('Edit job') : t('New job');
   document.getElementById('f-name').value = job ? job.name : '';
   document.getElementById('f-category').value = job ? (job.category || '') : '';
-  const existingCats = Array.from(new Set(jobsCache.map((j) => (j.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'de'));
+  const existingCats = Array.from(new Set(jobsCache.map((j) => (j.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, LOCALE));
   document.getElementById('category-suggestions').innerHTML = existingCats.map((c) => `<option value="${escapeHtml(c)}">`).join('');
   document.getElementById('f-sourcePath').value = job ? job.sourcePath : '';
   document.getElementById('f-filePattern').value = job ? job.filePattern : '*';
@@ -1186,11 +1197,11 @@ function openModal(job) {
   document.getElementById('f-smtpPasswort').value = '';
   document.getElementById('f-mailVon').value = job ? (job.mailVon || '') : '';
   document.getElementById('f-mailAn').value = job ? (job.mailAn || '') : '';
-  document.getElementById('f-mailBetreff').value = job ? (job.mailBetreff || 'Neue Datei: {dateiname}') : 'Neue Datei: {dateiname}';
+  document.getElementById('f-mailBetreff').value = job ? (job.mailBetreff || 'New file: {filename}') : 'New file: {filename}';
   document.getElementById('f-smtpSicher').checked = job ? job.smtpSicher !== false : true;
   document.getElementById('f-maxVersuche').value = job ? (job.maxVersuche !== undefined ? job.maxVersuche : 5) : 5;
   document.getElementById('f-wartezeitBasisSec').value = job ? (job.wartezeitBasisSec || 60) : 60;
-  document.getElementById('f-quarantaeneSubfolder').value = job ? (job.quarantaeneSubfolder || '_quarantaene') : '_quarantaene';
+  document.getElementById('f-quarantaeneSubfolder').value = job ? (job.quarantaeneSubfolder || '_quarantine') : '_quarantine';
   toggleZielTyp();
   document.getElementById('f-method').value = job ? job.method : 'POST';
   document.getElementById('f-uploadMode').value = job ? job.uploadMode : 'binary';
@@ -1203,7 +1214,7 @@ function openModal(job) {
   authPasswordInput.type = 'password';
   document.getElementById('f-curlExtraArgs').value = job ? (job.curlExtraArgs || []).join('\n') : '';
   document.getElementById('f-onSuccess').value = job ? job.onSuccess : 'archive';
-  document.getElementById('f-archiveSubfolder').value = job ? job.archiveSubfolder : '_gesendet';
+  document.getElementById('f-archiveSubfolder').value = job ? job.archiveSubfolder : '_sent';
   document.getElementById('f-archiveRetentionDays').value = job ? (job.archiveRetentionDays || 0) : 0;
   document.getElementById('f-extraTargetUrls').value = job ? (job.extraTargetUrls || []).join('\n') : '';
   document.getElementById('f-notes').value = job ? (job.notes || '') : '';
@@ -1213,8 +1224,8 @@ function openModal(job) {
   document.getElementById('f-stapelTeilen').checked = job ? Boolean(job.stapelTeilen) : false;
   document.getElementById('f-vorspannVerwerfen').checked = job ? Boolean(job.vorspannVerwerfen) : false;
   document.getElementById('f-teilNamensmuster').value = job
-    ? (job.teilNamensmuster !== undefined ? job.teilNamensmuster : '{stamm}_{nr}_{qrWert}')
-    : '{stamm}_{nr}_{qrWert}';
+    ? (job.teilNamensmuster !== undefined ? job.teilNamensmuster : '{stem}_{no}_{qrValue}')
+    : '{stem}_{no}_{qrValue}';
   document.getElementById('namen-vorschau').textContent = '';
   toggleStapel();
   document.getElementById('f-sendeFormat').value = job ? (job.sendeFormat || 'json') : 'json';
@@ -1222,7 +1233,7 @@ function openModal(job) {
   document.getElementById('f-metadataFeldName').value = job ? (job.metadataFeldName || 'metadata1') : 'metadata1';
   document.getElementById('f-metadataVorlage').value = job && job.metadataVorlage !== undefined
     ? job.metadataVorlage
-    : '{\n  "name": "{dateinameOhneEndung}",\n  "order_id": "{qrWert}",\n  "date": "{unixzeit}"\n}';
+    : '{\n  "name": "{filenameWithoutExt}",\n  "order_id": "{qrValue}",\n  "date": "{unixtime}"\n}';
   document.getElementById('f-auftragsnummer').value = job ? (job.auftragsnummer || '') : '';
   document.getElementById('f-dateinameRegex').value = job ? (job.dateinameRegex || '') : '';
   document.getElementById('metadata-preview').classList.add('hidden');
@@ -1234,7 +1245,7 @@ function openModal(job) {
   document.getElementById('template-row').classList.toggle('hidden', Boolean(job));
   if (!job) loadTemplatesIntoSelect();
   document.getElementById('f-onError').value = job ? job.onError : 'keep';
-  document.getElementById('f-errorSubfolder').value = job ? job.errorSubfolder : '_fehler';
+  document.getElementById('f-errorSubfolder').value = job ? job.errorSubfolder : '_error';
   document.getElementById('test-connection-result').textContent = '';
   document.getElementById('test-connection-result').className = '';
 
@@ -1249,18 +1260,18 @@ function openModal(job) {
   toggleAuthFields();
   aktualisiereFormularAbschnitte(job);
   modalBackdrop.classList.add('open');
-  // Erst nach dem Einblenden bewertbar, welche Felder sichtbar sind
+  // Only after showing it can we tell which fields are visible
   setTimeout(nimmVersteckteFelderAus, 0);
-  // Ausgangsstand für die Prüfung auf ungespeicherte Änderungen erfassen —
-  // etwas später als die vorstehende Zeile, damit auch deren Wirkung schon drin ist
+  // Capture the initial state for the unsaved-changes check —
+  // a little later than the line above so that its effect is already included
   setTimeout(() => { jobFormSnapshot = serialisiereFormular(form); }, 20);
 }
 function closeModal() { modalBackdrop.classList.remove('open'); }
 
-// ---------- Ungespeicherte Änderungen im Job-Formular ----------
-// Generisch über alle Formularfelder — anders als bei den Einstellungen
-// füllt openModal() das Formular vollständig synchron, ohne Nachladen im
-// Hintergrund, daher genügt ein einziger Schnappschuss nach dem Öffnen.
+// ---------- Unsaved changes in the job form ----------
+// Generic over all form fields — unlike the settings, openModal() fills the
+// form completely and synchronously, without loading in the background,
+// so a single snapshot after opening is enough.
 function serialisiereFormular(formEl) {
   const werte = {};
   formEl.querySelectorAll('input, select, textarea').forEach((el, i) => {
@@ -1279,8 +1290,8 @@ function jobFormularGeaendert() {
 function schliesseJobFormular() {
   if (jobFormularGeaendert()) {
     askConfirm(
-      t('Dieser Job enthält ungespeicherte Änderungen. Beim Schließen gehen sie verloren.'),
-      t('Trotzdem verwerfen'),
+      t('This job has unsaved changes. They will be lost when you close it.'),
+      t('Discard anyway'),
       async () => closeModal(),
     );
     return;
@@ -1302,7 +1313,7 @@ function toggleZielTyp() {
   document.getElementById('wrap-ziel-http').classList.toggle('hidden', typ !== 'http');
   document.getElementById('wrap-ziel-ordner').classList.toggle('hidden', typ !== 'ordner');
   document.getElementById('wrap-ziel-email').classList.toggle('hidden', typ !== 'email');
-  // Übertragungsdetails (Header, Auth, curl) gelten nur für HTTP
+  // Transfer details (headers, auth, curl) only apply to HTTP
   const uebertragung = document.getElementById('sec-uebertragung');
   if (uebertragung) uebertragung.classList.toggle('hidden', typ !== 'http');
   const url = document.getElementById('f-targetUrl');
@@ -1352,7 +1363,7 @@ document.getElementById('btn-test-connection').addEventListener('click', async (
     mailBetreff: document.getElementById('f-mailBetreff').value,
     maxVersuche: Number(document.getElementById('f-maxVersuche').value),
     wartezeitBasisSec: Number(document.getElementById('f-wartezeitBasisSec').value) || 60,
-    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantaene',
+    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantine',
     method: document.getElementById('f-method').value,
     uploadMode: document.getElementById('f-uploadMode').value,
     multipartField: document.getElementById('f-multipartField').value.trim() || 'file',
@@ -1363,12 +1374,12 @@ document.getElementById('btn-test-connection').addEventListener('click', async (
     curlExtraArgs: document.getElementById('f-curlExtraArgs').value.split('\n').map((s) => s.trim()).filter(Boolean),
   };
   resultEl.className = 'pending';
-  resultEl.textContent = 'Teste …';
+  resultEl.textContent = t('Testing …');
   try {
     const result = await api('/test-connection', { method: 'POST', body: JSON.stringify(payload) });
     resultEl.className = result.ok ? 'ok' : 'error';
     resultEl.textContent = result.ok
-      ? `✓ Erfolgreich (HTTP ${result.httpStatus})`
+      ? '✓ ' + t('Successful (HTTP {status})', { status: result.httpStatus })
       : `✗ ${result.httpStatus ? 'HTTP ' + result.httpStatus + ' — ' : ''}${result.message}`;
   } catch (err) {
     resultEl.className = 'error';
@@ -1376,9 +1387,9 @@ document.getElementById('btn-test-connection').addEventListener('click', async (
   }
 });
 
-// Ausgeblendete Felder dürfen das Speichern nicht blockieren: Der Browser
-// kann sie nicht anzeigen und bricht dann kommentarlos ab. Vor der Prüfung
-// werden sie daher von der Pflichtprüfung ausgenommen.
+// Hidden fields must not block saving: the browser cannot show them
+// and then silently aborts. They are therefore excluded from the
+// required-field check beforehand.
 function nimmVersteckteFelderAus() {
   const sichtbar = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   form.querySelectorAll('input, select, textarea').forEach((el) => {
@@ -1388,7 +1399,7 @@ function nimmVersteckteFelderAus() {
         el.dataset.altRequired = el.required ? '1' : '';
         el.required = false;
         el.setAttribute('novalidate-hilfe', '');
-        // Zahlenfelder ohne passende Schrittweite ebenfalls entschärfen
+        // Also defuse number fields without a matching step
         if (el.type === 'number' && !el.checkValidity()) {
           el.dataset.altStep = el.getAttribute('step') || '';
           el.setAttribute('step', 'any');
@@ -1407,13 +1418,13 @@ function nimmVersteckteFelderAus() {
   });
 }
 
-// Beim Absenden prüfen und bei einem Problem verständlich melden,
-// statt den Klick wirkungslos verpuffen zu lassen.
+// Check on submit and report a problem in plain words,
+// instead of letting the click fizzle out without effect.
 form.addEventListener('invalid', (e) => {
   const el = e.target;
   const sichtbar = Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   if (!sichtbar) {
-    showToast(`Feld „${el.id}" verhindert das Speichern: ${el.validationMessage}`, 'error');
+    showToast(t('Field “{field}” prevents saving: {message}', { field: el.id, message: el.validationMessage }), 'error');
   }
 }, true);
 
@@ -1442,7 +1453,7 @@ form.addEventListener('submit', async (e) => {
     mailBetreff: document.getElementById('f-mailBetreff').value,
     maxVersuche: Number(document.getElementById('f-maxVersuche').value),
     wartezeitBasisSec: Number(document.getElementById('f-wartezeitBasisSec').value) || 60,
-    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantaene',
+    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantine',
     method: document.getElementById('f-method').value,
     uploadMode: document.getElementById('f-uploadMode').value,
     multipartField: document.getElementById('f-multipartField').value.trim() || 'file',
@@ -1452,7 +1463,7 @@ form.addEventListener('submit', async (e) => {
     authPassword: document.getElementById('f-authPassword').value,
     curlExtraArgs: document.getElementById('f-curlExtraArgs').value.split('\n').map((s) => s.trim()).filter(Boolean),
     onSuccess: document.getElementById('f-onSuccess').value,
-    archiveSubfolder: document.getElementById('f-archiveSubfolder').value.trim() || '_gesendet',
+    archiveSubfolder: document.getElementById('f-archiveSubfolder').value.trim() || '_sent',
     archiveRetentionDays: Number(document.getElementById('f-archiveRetentionDays').value) || 0,
     extraTargetUrls: document.getElementById('f-extraTargetUrls').value.split('\n').map((x) => x.trim()).filter(Boolean),
     notes: document.getElementById('f-notes').value,
@@ -1471,7 +1482,7 @@ form.addEventListener('submit', async (e) => {
     dryRun: document.getElementById('f-dryRun').checked,
     dedupe: document.getElementById('f-dedupe').checked,
     onError: document.getElementById('f-onError').value,
-    errorSubfolder: document.getElementById('f-errorSubfolder').value.trim() || '_fehler',
+    errorSubfolder: document.getElementById('f-errorSubfolder').value.trim() || '_error',
     scheduleEnabled: scheduleEnabledCheckbox.checked,
     activeDays: Array.from(document.querySelectorAll('#weekday-picker input[type="checkbox"]:checked')).map((cb) => cb.value),
     timeStart: document.getElementById('f-timeStart').value || '00:00',
@@ -1480,10 +1491,10 @@ form.addEventListener('submit', async (e) => {
   try {
     if (id) {
       await api(`/jobs/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-      showToast(`"${payload.name}" gespeichert`, 'success');
+      showToast(t('“{job}” saved', { job: payload.name }), 'success');
     } else {
       await api('/jobs', { method: 'POST', body: JSON.stringify(payload) });
-      showToast(`"${payload.name}" angelegt`, 'success');
+      showToast(t('“{job}” created', { job: payload.name }), 'success');
     }
     closeModal();
     await loadJobs();
@@ -1492,19 +1503,19 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-// ---------- Statistik: Charts ----------
+// ---------- Statistics: charts ----------
 
-// Trendpfeil für eine Kennzahl gegenüber dem unmittelbar davorliegenden,
-// gleich langen Zeitraum. „richtung“ legt fest, ob ein Anstieg als gut oder
-// schlecht gilt (bei Übertragungen/Datenvolumen ist mehr weder gut noch
-// schlecht, daher „neutral“ — nur eingefärbt bei Erfolgsquote und Fehlern).
+// Trend arrow for a key figure compared with the immediately preceding
+// period of the same length. “richtung” defines whether an increase counts as
+// good or bad (for transfers/data volume more is neither good nor bad,
+// hence “neutral” — only coloured for success rate and errors).
 function trendHtml(jetzt, vorher, richtung) {
   if (vorher === null || vorher === undefined) return '';
-  const hinweis = t('im Vergleich zum vorherigen Zeitraum');
+  const hinweis = t('compared with the previous period');
   if (vorher === 0) {
     if (jetzt === 0) return '';
     const klasseNeu = richtung === 'hoeherSchlecht' ? 'schlecht' : richtung === 'hoeherGut' ? 'gut' : 'neutral';
-    return `<span class="trend-${klasseNeu}" title="${hinweis}">▲ ${t('neu')}</span>`;
+    return `<span class="trend-${klasseNeu}" title="${hinweis}">▲ ${t('new')}</span>`;
   }
   const diff = Math.round(((jetzt - vorher) / vorher) * 100);
   if (diff === 0) return `<span class="trend-neutral" title="${hinweis}">± 0 %</span>`;
@@ -1527,14 +1538,14 @@ function renderKpis(stats) {
   document.getElementById('kpi-volume-trend').innerHTML = vor ? trendHtml(stats.totals.bytes, vor.bytes, 'neutral') : '';
   document.getElementById('kpi-errors-trend').innerHTML = vor ? trendHtml(stats.totals.error, vor.error, 'hoeherSchlecht') : '';
 
-  const hinweis = t('im Vergleich zum vorherigen Zeitraum');
+  const hinweis = t('compared with the previous period');
   const vorherRate = vor && vor.transfers > 0 ? Math.round((vor.success / vor.transfers) * 100) : null;
   let rateTrend = '';
   if (rate !== null && vorherRate !== null) {
     const diffPunkte = rate - vorherRate;
     rateTrend = diffPunkte === 0
-      ? `<span class="trend-neutral" title="${hinweis}">± 0 ${t('Pkt.')}</span>`
-      : `<span class="trend-${diffPunkte > 0 ? 'gut' : 'schlecht'}" title="${hinweis}">${diffPunkte > 0 ? '▲' : '▼'} ${Math.abs(diffPunkte)} ${t('Pkt.')}</span>`;
+      ? `<span class="trend-neutral" title="${hinweis}">± 0 ${t('pts')}</span>`
+      : `<span class="trend-${diffPunkte > 0 ? 'gut' : 'schlecht'}" title="${hinweis}">${diffPunkte > 0 ? '▲' : '▼'} ${Math.abs(diffPunkte)} ${t('pts')}</span>`;
   }
   document.getElementById('kpi-rate-trend').innerHTML = rateTrend;
 }
@@ -1542,7 +1553,7 @@ function renderKpis(stats) {
 function renderTimelineChart(perDay) {
   const el = document.getElementById('chart-timeline');
   if (!perDay || perDay.every((d) => d.success === 0 && d.error === 0)) {
-    el.innerHTML = '<p class="chart-empty">Noch keine Übertragungen im gewählten Zeitraum.</p>';
+    el.innerHTML = `<p class="chart-empty">${t('No transfers in the selected period yet.')}</p>`;
     return;
   }
 
@@ -1550,7 +1561,7 @@ function renderTimelineChart(perDay) {
   const padL = 34; const padR = 10; const padT = 18; const padB = 34;
   const innerW = w - padL - padR; const innerH = h - padT - padB;
   const rawMax = Math.max(1, ...perDay.map((d) => d.success + d.error));
-  // Achse auf einen glatten Wert aufrunden, damit die Beschriftung lesbar bleibt
+  // Round the axis up to a round value so that the labels stay readable
   const step10 = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const max = Math.ceil(rawMax / step10) * step10;
 
@@ -1560,7 +1571,7 @@ function renderTimelineChart(perDay) {
   const totalDays = perDay.filter((d) => d.success + d.error > 0).length;
   const showValues = n <= 31;
 
-  // Y-Achse: Gitterlinien mit Zahlen
+  // Y axis: grid lines with numbers
   let grid = '';
   const ticks = 4;
   for (let t = 0; t <= ticks; t += 1) {
@@ -1580,15 +1591,15 @@ function renderTimelineChart(perDay) {
     const baseY = padT + innerH;
 
     if (total === 0) {
-      // Nulltage sichtbar lassen, damit die Zeitachse als Reihe lesbar bleibt
-      bars += `<rect x="${x.toFixed(1)}" y="${(baseY - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" fill="var(--border-strong)"><title>${fmtDay(d.date)}: keine Übertragungen</title></rect>`;
+      // Keep zero days visible so that the time axis stays readable as a series
+      bars += `<rect x="${x.toFixed(1)}" y="${(baseY - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" fill="var(--border-strong)"><title>${t('{day}: no transfers', { day: fmtDay(d.date) })}</title></rect>`;
     } else {
       const successH = (d.success / max) * innerH;
       const errorH = (d.error / max) * innerH;
       const yError = baseY - errorH;
       const ySuccess = yError - successH;
-      const tip = `${fmtDay(d.date)}: ${total} Übertragung(en) — ${d.success} Erfolg, ${d.error} Fehler` +
-        (d.jobs ? ` · ${d.jobs} Job(s)` : '') + ` · ${fmtBytes(d.bytes)}`;
+      const tip = t('{day}: {total} transfer(s) — {ok} successful, {err} failed', { day: fmtDay(d.date), total, ok: d.success, err: d.error })
+        + (d.jobs ? ' · ' + t('{n} job(s)', { n: d.jobs }) : '') + ` · ${fmtBytes(d.bytes)}`;
 
       if (d.error > 0) bars += `<rect class="chart-bar-error" x="${x.toFixed(1)}" y="${yError.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1.5, errorH).toFixed(1)}" rx="1.5"><title>${tip}</title></rect>`;
       if (d.success > 0) bars += `<rect class="chart-bar-success" x="${x.toFixed(1)}" y="${ySuccess.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1.5, successH).toFixed(1)}" rx="1.5"><title>${tip}</title></rect>`;
@@ -1610,16 +1621,16 @@ function renderTimelineChart(perDay) {
 
   el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">${grid}${bars}${labels}</svg>
     <div class="chart-footer">
-      <span class="chart-legend-item"><i style="background:var(--success)"></i>Erfolg</span>
-      <span class="chart-legend-item"><i style="background:var(--error)"></i>Fehler</span>
-      <span class="chart-summary">${gesamt} Übertragungen an ${totalDays} Tag(en)${fehler ? ` · <span style="color:var(--error)">${fehler} Fehler</span>` : ''}${maxJobs ? ` · bis zu ${maxJobs} Job(s)/Tag` : ''}</span>
+      <span class="chart-legend-item"><i style="background:var(--success)"></i>${t('Success')}</span>
+      <span class="chart-legend-item"><i style="background:var(--error)"></i>${t('Errors')}</span>
+      <span class="chart-summary">${t('{total} transfers on {days} day(s)', { total: gesamt, days: totalDays })}${fehler ? ` · <span style="color:var(--error)">${t('{n} errors', { n: fehler })}</span>` : ''}${maxJobs ? ' · ' + t('up to {n} job(s)/day', { n: maxJobs }) : ''}</span>
     </div>`;
 }
 
 function renderPerJobChart(perJob) {
   const el = document.getElementById('chart-perjob');
   if (!perJob || perJob.length === 0) {
-    el.innerHTML = '<p class="chart-empty">Noch keine Übertragungen im gewählten Zeitraum.</p>';
+    el.innerHTML = `<p class="chart-empty">${t('No transfers in the selected period yet.')}</p>`;
     return;
   }
   const top = perJob.slice(0, 8);
@@ -1628,7 +1639,7 @@ function renderPerJobChart(perJob) {
     const total = j.success + j.error;
     const successPct = (j.success / max) * 100;
     const errorPct = (j.error / max) * 100;
-    const tip = `${j.jobName}: ${total} Übertragung(en) — ${j.success} Erfolg, ${j.error} Fehler · ${fmtBytes(j.bytes)}`;
+    const tip = t('{name}: {total} transfer(s) — {ok} successful, {err} failed', { name: j.jobName, total, ok: j.success, err: j.error }) + ` · ${fmtBytes(j.bytes)}`;
     return `
     <div class="job-bar-row" title="${escapeHtml(tip)}">
       <span class="job-bar-label" title="${escapeHtml(j.jobName)}">${escapeHtml(j.jobName)}</span>
@@ -1645,17 +1656,17 @@ function renderPerCategoryCharts(perCategory) {
   const elCount = document.getElementById('chart-percategory');
   const elVolume = document.getElementById('chart-catvolume');
   if (!perCategory || perCategory.length === 0) {
-    elCount.innerHTML = '<p class="chart-empty">Noch keine Übertragungen im gewählten Zeitraum.</p>';
-    elVolume.innerHTML = '<p class="chart-empty">Noch keine Übertragungen im gewählten Zeitraum.</p>';
+    elCount.innerHTML = `<p class="chart-empty">${t('No transfers in the selected period yet.')}</p>`;
+    elVolume.innerHTML = `<p class="chart-empty">${t('No transfers in the selected period yet.')}</p>`;
     return;
   }
   const maxCount = Math.max(1, ...perCategory.map((c) => c.success + c.error));
   elCount.innerHTML = perCategory.map((c) => {
     const total = c.success + c.error;
-    const tip = `${c.category}: ${total} Übertragung(en) — ${c.success} Erfolg, ${c.error} Fehler · ${fmtBytes(c.bytes)}`;
+    const tip = t('{name}: {total} transfer(s) — {ok} successful, {err} failed', { name: kategorieName(c.category), total, ok: c.success, err: c.error }) + ` · ${fmtBytes(c.bytes)}`;
     return `
     <div class="job-bar-row" title="${escapeHtml(tip)}">
-      <span class="job-bar-label" title="${escapeHtml(c.category)}">${escapeHtml(c.category)}</span>
+      <span class="job-bar-label" title="${escapeHtml(kategorieName(c.category))}">${escapeHtml(kategorieName(c.category))}</span>
       <span class="job-bar-track">
         <span class="job-bar-seg success" style="width:${((c.success / maxCount) * 100).toFixed(1)}%"></span>
         <span class="job-bar-seg error" style="width:${((c.error / maxCount) * 100).toFixed(1)}%"></span>
@@ -1668,7 +1679,7 @@ function renderPerCategoryCharts(perCategory) {
   const maxBytes = Math.max(1, ...byVolume.map((c) => c.bytes));
   elVolume.innerHTML = byVolume.map((c) => `
     <div class="job-bar-row">
-      <span class="job-bar-label" title="${escapeHtml(c.category)}">${escapeHtml(c.category)}</span>
+      <span class="job-bar-label" title="${escapeHtml(kategorieName(c.category))}">${escapeHtml(kategorieName(c.category))}</span>
       <span class="job-bar-track">
         <span class="job-bar-seg" style="width:${((c.bytes / maxBytes) * 100).toFixed(1)}%;background:var(--accent)"></span>
       </span>
@@ -1679,12 +1690,12 @@ function renderPerCategoryCharts(perCategory) {
 function renderTargetTable(perTarget) {
   const el = document.getElementById('target-table');
   if (!perTarget || perTarget.length === 0) {
-    el.innerHTML = '<p class="chart-empty">Noch keine Übertragungen im gewählten Zeitraum.</p>';
+    el.innerHTML = `<p class="chart-empty">${t('No transfers in the selected period yet.')}</p>`;
     return;
   }
   el.innerHTML = `
     <table>
-      <thead><tr><th>Job</th><th>Schnittstelle</th><th>Erfolg</th><th>Fehler</th><th>Gesamt</th><th>Datenvolumen</th></tr></thead>
+      <thead><tr><th>${t('Job')}</th><th>${t('API endpoint')}</th><th>${t('Success')}</th><th>${t('Errors')}</th><th>${t('Total')}</th><th>${t('Data volume')}</th></tr></thead>
       <tbody>
         ${perTarget.map((t) => `
           <tr>
@@ -1731,14 +1742,14 @@ transferBackdrop.addEventListener('click', (e) => { if (e.target === transferBac
 
 document.getElementById('btn-do-export').addEventListener('click', () => {
   window.open('/api/config/export', '_blank');
-  showToast('Export gestartet — Datei wird heruntergeladen', 'success');
+  showToast(t('Export started — the file is being downloaded'), 'success');
 });
 
 document.getElementById('btn-do-import').addEventListener('click', () => {
   const file = importFileInput.files[0];
   if (!file) {
     importResult.className = 'error';
-    importResult.textContent = 'Bitte zuerst eine JSON-Datei auswählen.';
+    importResult.textContent = t('Please choose a JSON file first.');
     return;
   }
   const reader = new FileReader();
@@ -1748,12 +1759,12 @@ document.getElementById('btn-do-import').addEventListener('click', () => {
       parsed = JSON.parse(reader.result);
     } catch {
       importResult.className = 'error';
-      importResult.textContent = 'Datei ist kein gültiges JSON.';
+      importResult.textContent = t('The file is not valid JSON.');
       return;
     }
     if (!Array.isArray(parsed.jobs)) {
       importResult.className = 'error';
-      importResult.textContent = 'Datei enthält kein "jobs"-Array — falsche Datei?';
+      importResult.textContent = t('The file contains no "jobs" array — wrong file?');
       return;
     }
     try {
@@ -1762,27 +1773,27 @@ document.getElementById('btn-do-import').addEventListener('click', () => {
         body: JSON.stringify({ jobs: parsed.jobs, replace: importReplaceCheckbox.checked }),
       });
       importResult.className = 'ok';
-      importResult.textContent = `Import erfolgreich: ${result.added} neu, ${result.updated} aktualisiert (gesamt ${result.total} Jobs).`;
-      showToast('Konfiguration importiert', 'success');
+      importResult.textContent = t('Import successful: {added} new, {updated} updated ({total} jobs in total).', { added: result.added, updated: result.updated, total: result.total });
+      showToast(t('Configuration imported'), 'success');
       await loadJobs();
       await loadLogsAll();
     } catch (err) {
       importResult.className = 'error';
-      importResult.textContent = 'Import fehlgeschlagen: ' + err.message;
+      importResult.textContent = t('Import failed: {error}', { error: err.message });
     }
   };
   reader.readAsText(file);
 });
 
-// ---------- Einstellungen ----------
+// ---------- Settings ----------
 
-// Reiter innerhalb der Einstellungen — rein optisches Umschalten, keines
-// der Formulare darunter wird dadurch verändert oder neu geladen.
-// Beobachtete Eingabefelder je Reiter — nur echte Eingaben, keine reinen
-// Anzeige-/Statustexte. Dient allein dazu, vor dem Wechsel zu warnen, wenn
-// hier etwas eingetippt, aber noch nicht gespeichert wurde.
+// Tabs inside the settings — purely visual switching; none of the forms
+// below is changed or reloaded by it.
+// Watched input fields per tab — only real inputs, no plain display or
+// status texts. Used only to warn before switching if something was
+// typed here but not saved yet.
 const settingsBeobachteteFelder = {
-  allg: ['marke-name-eingabe', 'marke-farbe-hex', 'settings-retention-days'],
+  allg: ['marke-name-eingabe', 'marke-farbe-hex', 'settings-retention-days', 'settings-language'],
   zugriff: ['neu-benutzer-name', 'neu-benutzer-anzeige', 'neu-benutzer-passwort', 'einst-joboverview'],
   benachr: ['benachr-email-aktiv', 'benachr-smtpHost', 'benachr-smtpPort', 'benachr-smtpBenutzer',
     'benachr-smtpPasswort', 'benachr-von', 'benachr-an', 'benachr-smtpSicher',
@@ -1807,9 +1818,9 @@ function settingsReiterGeaendert(spanel) {
   if (!vorher) return false;
   return (settingsBeobachteteFelder[spanel] || []).some((id, i) => settingsFeldWert(id) !== vorher[i]);
 }
-// Nach jedem erfolgreichen Speichern aufgerufen, damit der jetzt gesicherte
-// Stand nicht mehr als „ungespeichert“ gilt — unabhängig davon, in welchem
-// Reiter gespeichert wurde, da eine Änderung stets nur den eigenen Reiter betrifft.
+// Called after every successful save so that the state saved now no longer
+// counts as “unsaved” — regardless of the tab it was saved in, since a change
+// always only affects its own tab.
 function markiereSettingsGespeichert() { erfasseAlleSettingsSnapshots(); }
 
 function wendeReiterwechselAn(ziel) {
@@ -1825,8 +1836,8 @@ function wechsleSettingsReiter(ziel) {
   const von = aktuell ? aktuell.dataset.spanel : null;
   if (von && von !== ziel && settingsReiterGeaendert(von)) {
     askConfirm(
-      t('Dieser Reiter enthält ungespeicherte Änderungen. Beim Wechseln gehen sie verloren.'),
-      t('Trotzdem wechseln'),
+      t('This tab has unsaved changes. They will be lost when you switch.'),
+      t('Switch anyway'),
       async () => wendeReiterwechselAn(ziel),
     );
     return;
@@ -1841,13 +1852,14 @@ document.getElementById('settings-tabs').addEventListener('click', (e) => {
 
 async function openSettingsModal() {
   settingsBackdrop.classList.add('open');
-  settingsSnapshot = {}; // vermeidet, dass ein Reiterwechsel-Check noch den Stand der letzten Sitzung sieht
-  wechsleSettingsReiter('allg'); // stets auf dem ersten Reiter öffnen
+  settingsSnapshot = {}; // prevents a tab-switch check from still seeing the state of the last session
+  wechsleSettingsReiter('allg'); // always open on the first tab
   document.getElementById('settings-result').textContent = '';
   document.getElementById('settings-result').className = '';
   try {
     const s = await api('/settings');
     document.getElementById('settings-retention-days').value = s.logRetentionDays;
+    document.getElementById('settings-language').value = s.language || 'en';
     document.getElementById('einst-joboverview').checked = s.jobUebersichtImLogin !== false;
     ladeBenutzer();
     ladeUpdateStand(s);
@@ -1858,9 +1870,9 @@ async function openSettingsModal() {
     showToast(err.message, 'error');
   }
   loadBackups();
-  // Ausgangsstand erst erfassen, wenn die geladenen Werte oben aller
-  // Voraussicht nach eingetroffen sind — sonst gilt das Nachladen selbst
-  // fälschlich schon als „Änderung“.
+  // Only capture the initial state once the values loaded above have
+  // most likely arrived — otherwise the loading itself would wrongly
+  // count as a “change”.
   setTimeout(erfasseAlleSettingsSnapshots, 700);
 }
 function closeSettingsModal() { settingsBackdrop.classList.remove('open'); }
@@ -1878,14 +1890,14 @@ document.getElementById('btn-save-retention').addEventListener('click', async ()
   const resultEl = document.getElementById('settings-result');
   if (!days || days < 1) {
     resultEl.className = 'error';
-    resultEl.textContent = 'Bitte eine gültige Anzahl Tage angeben.';
+    resultEl.textContent = t('Please enter a valid number of days.');
     return;
   }
   try {
     await api('/settings', { method: 'PUT', body: JSON.stringify({ logRetentionDays: days }) });
     resultEl.className = 'ok';
-    resultEl.textContent = `Aufbewahrungsfrist auf ${days} Tage gesetzt.`;
-    showToast('Aufbewahrungsfrist gespeichert', 'success');
+    resultEl.textContent = t('Retention period set to {n} days.', { n: days });
+    showToast(t('Retention period saved'), 'success');
     markiereSettingsGespeichert();
   } catch (err) {
     resultEl.className = 'error';
@@ -1893,7 +1905,22 @@ document.getElementById('btn-save-retention').addEventListener('click', async ()
   }
 });
 
-// ---------- Kategorien verwalten ----------
+document.getElementById('btn-save-language').addEventListener('click', async () => {
+  const language = document.getElementById('settings-language').value;
+  const resultEl = document.getElementById('settings-result');
+  try {
+    await api('/settings', { method: 'PUT', body: JSON.stringify({ language }) });
+    resultEl.className = 'ok';
+    resultEl.textContent = t('Logs and notifications are now written in {language}.', { language: language === 'de' ? 'Deutsch' : 'English' });
+    showToast(t('Language saved'), 'success');
+    markiereSettingsGespeichert();
+  } catch (err) {
+    resultEl.className = 'error';
+    resultEl.textContent = err.message;
+  }
+});
+
+// ---------- Manage categories ----------
 
 const categoriesBackdrop = document.getElementById('categories-backdrop');
 
@@ -1903,16 +1930,16 @@ async function openCategoriesModal() {
   resultEl.textContent = '';
   resultEl.className = '';
   const listEl = document.getElementById('categories-list');
-  const cats = (lastStatus && lastStatus.categories ? lastStatus.categories : []).filter((c) => c.name !== 'Ohne Kategorie');
+  const cats = (lastStatus && lastStatus.categories ? lastStatus.categories : []).filter((c) => c.name !== NO_CATEGORY);
   if (cats.length === 0) {
-    listEl.innerHTML = '<p class="chart-empty">Noch keine Kategorien vergeben.</p>';
+    listEl.innerHTML = `<p class="chart-empty">${t('No categories assigned yet.')}</p>`;
     return;
   }
   listEl.innerHTML = cats.map((c) => `
     <div class="category-row" data-original="${escapeHtml(c.name)}">
       <input type="text" value="${escapeHtml(c.name)}">
       <span class="cat-count">${c.total}</span>
-      <button type="button" class="btn" data-cat-save>Speichern</button>
+      <button type="button" class="btn" data-cat-save>${t('Save')}</button>
     </div>`).join('');
 }
 function closeCategoriesModal() { categoriesBackdrop.classList.remove('open'); }
@@ -1928,14 +1955,14 @@ document.getElementById('categories-list').addEventListener('click', async (e) =
   const from = row.dataset.original;
   const to = row.querySelector('input').value.trim();
   const resultEl = document.getElementById('categories-result');
-  if (from === to) { resultEl.className = ''; resultEl.textContent = 'Keine Änderung.'; return; }
+  if (from === to) { resultEl.className = ''; resultEl.textContent = t('No change.'); return; }
   try {
     const r = await api('/categories/rename', { method: 'POST', body: JSON.stringify({ from, to }) });
     resultEl.className = 'ok';
     resultEl.textContent = to
-      ? `${r.affected} Job(s) von "${from}" nach "${to}" verschoben.`
-      : `Kategoriezuordnung für ${r.affected} Job(s) entfernt.`;
-    showToast('Kategorie aktualisiert', 'success');
+      ? t('{n} job(s) moved from “{from}” to “{to}”.', { n: r.affected, from, to })
+      : t('Category assignment removed for {n} job(s).', { n: r.affected });
+    showToast(t('Category updated'), 'success');
     await loadJobs();
     await loadStatus();
     await openCategoriesModal();
@@ -1947,7 +1974,7 @@ document.getElementById('categories-list').addEventListener('click', async (e) =
   }
 });
 
-// ---------- Dateivorschau im Job-Formular ----------
+// ---------- File preview in the job form ----------
 
 document.getElementById('btn-preview-files').addEventListener('click', async () => {
   const resultEl = document.getElementById('preview-result');
@@ -1955,12 +1982,12 @@ document.getElementById('btn-preview-files').addEventListener('click', async () 
   const sourcePath = document.getElementById('f-sourcePath').value.trim();
   if (!sourcePath) {
     resultEl.className = 'error';
-    resultEl.textContent = 'Bitte zuerst den Quell-Ordner eintragen.';
+    resultEl.textContent = t('Please enter the source folder first.');
     listEl.classList.add('hidden');
     return;
   }
   resultEl.className = '';
-  resultEl.textContent = 'Prüfe …';
+  resultEl.textContent = t('Checking …');
   try {
     const r = await api('/preview-files', {
       method: 'POST',
@@ -1979,15 +2006,15 @@ document.getElementById('btn-preview-files').addEventListener('click', async () 
     }
     resultEl.className = r.total > 0 ? 'ok' : '';
     resultEl.textContent = r.total === 0
-      ? 'Keine passende Datei gefunden — Filter prüfen.'
-      : `${r.total} Datei(en) würden gesendet.`;
+      ? t('No matching file found — check the filter.')
+      : t('{n} file(s) would be sent.', { n: r.total });
 
     const rows = r.files.map((f) => `<div class="pv-row"><span>${escapeHtml(f.name)}</span><span class="pv-size">${f.size === null ? '' : fmtBytes(f.size)}</span></div>`);
-    if (r.total > r.files.length) rows.push(`<span class="pv-note">… und ${r.total - r.files.length} weitere</span>`);
-    if (r.tooYoung > 0) rows.push(`<span class="pv-note">${r.tooYoung} Datei(en) warten noch auf die Ruhezeit</span>`);
-    r.tooLarge.forEach((f) => rows.push(`<div class="pv-row pv-skip"><span>${escapeHtml(f.name)}</span><span class="pv-size">${fmtBytes(f.size)} — zu groß</span></div>`));
+    if (r.total > r.files.length) rows.push(`<span class="pv-note">${t('… and {n} more', { n: r.total - r.files.length })}</span>`);
+    if (r.tooYoung > 0) rows.push(`<span class="pv-note">${t('{n} file(s) still waiting for the settle time', { n: r.tooYoung })}</span>`);
+    r.tooLarge.forEach((f) => rows.push(`<div class="pv-row pv-skip"><span>${escapeHtml(f.name)}</span><span class="pv-size">${fmtBytes(f.size)} — ${t('too large')}</span></div>`));
 
-    listEl.innerHTML = rows.join('') || '<span class="pv-note">Nichts anzuzeigen.</span>';
+    listEl.innerHTML = rows.join('') || `<span class="pv-note">${t('Nothing to show.')}</span>`;
     listEl.classList.remove('hidden');
   } catch (err) {
     resultEl.className = 'error';
@@ -1996,7 +2023,7 @@ document.getElementById('btn-preview-files').addEventListener('click', async () 
   }
 });
 
-// ---------- Schnellzugriff (Strg+K) ----------
+// ---------- Command palette (Ctrl+K) ----------
 
 const paletteBackdrop = document.getElementById('palette-backdrop');
 const paletteInput = document.getElementById('palette-input');
@@ -2006,17 +2033,17 @@ let paletteEintraege = [];
 
 function paletteAktionen() {
   const liste = [
-    { typ: 'aktion', label: t('Neuer Job'), ausfuehren: () => openModal(null) },
-    { typ: 'aktion', label: t('Statistik öffnen'), ausfuehren: () => document.querySelector('.tab[data-tab="statistik"]').click() },
-    { typ: 'aktion', label: t('Übersicht öffnen'), ausfuehren: () => document.querySelector('.tab[data-tab="uebersicht"]').click() },
-    { typ: 'aktion', label: t('Einstellungen öffnen'), ausfuehren: () => openSettingsModal() },
-    { typ: 'aktion', label: t('Hell/Dunkel umschalten'), ausfuehren: () => document.getElementById('btn-theme-toggle').click() },
-    { typ: 'aktion', label: t('Konfiguration exportieren'), ausfuehren: () => window.open('/api/config/export', '_blank') },
+    { typ: 'aktion', label: t('New job'), ausfuehren: () => openModal(null) },
+    { typ: 'aktion', label: t('Open statistics'), ausfuehren: () => document.querySelector('.tab[data-tab="statistik"]').click() },
+    { typ: 'aktion', label: t('Open overview'), ausfuehren: () => document.querySelector('.tab[data-tab="uebersicht"]').click() },
+    { typ: 'aktion', label: t('Open settings'), ausfuehren: () => openSettingsModal() },
+    { typ: 'aktion', label: t('Toggle light/dark'), ausfuehren: () => document.getElementById('btn-theme-toggle').click() },
+    { typ: 'aktion', label: t('Export configuration'), ausfuehren: () => window.open('/api/config/export', '_blank') },
   ];
-  // Direkter Sprung in einen Einstellungsreiter
-  [['allg', 'Allgemein'], ['zugriff', 'Benutzer & Zugriff'], ['benachr', 'Benachrichtigungen'], ['system', 'System & Wartung']]
+  // Jump directly to a settings tab
+  [['allg', 'General'], ['zugriff', 'Users & access'], ['benachr', 'Notifications'], ['system', 'System & maintenance']]
     .forEach(([spanel, name]) => liste.push({
-      typ: 'aktion', label: `${t('Einstellungen')}: ${t(name)}`,
+      typ: 'aktion', label: `${t('Settings')}: ${t(name)}`,
       ausfuehren: () => { openSettingsModal().then(() => wechsleSettingsReiter(spanel)); },
     }));
   return liste;
@@ -2040,7 +2067,7 @@ function renderPalette() {
   paletteEintraege = filterePalette(paletteInput.value);
   if (paletteAuswahl >= paletteEintraege.length) paletteAuswahl = Math.max(0, paletteEintraege.length - 1);
   paletteList.innerHTML = paletteEintraege.length === 0
-    ? `<div class="empty-state"><p>${t('Keine Treffer')}</p></div>`
+    ? `<div class="empty-state"><p>${t('No matches')}</p></div>`
     : paletteEintraege.map((e, i) => `
       <div class="palette-item${i === paletteAuswahl ? ' aktiv' : ''}" data-index="${i}">
         <span class="palette-typ">${e.typ === 'job' ? '⏵' : '⌘'}</span>
@@ -2083,10 +2110,10 @@ paletteInput.addEventListener('keydown', (e) => {
     const eintrag = paletteEintraege[paletteAuswahl];
     if (eintrag) { schliessePalette(); eintrag.ausfuehren(); }
   }
-  // Escape wird zentral im globalen Tastatur-Handler unten behandelt
+  // Escape is handled centrally in the global keyboard handler below
 });
 
-// ---------- Tastaturkürzel ----------
+// ---------- Keyboard shortcuts ----------
 
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -2119,7 +2146,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ---------- Vorlagen ----------
+// ---------- Templates ----------
 
 let templatesCache = [];
 
@@ -2128,7 +2155,7 @@ async function loadTemplatesIntoSelect() {
   try {
     templatesCache = await api('/templates');
   } catch { return; }
-  sel.innerHTML = '<option value="">Vorlage anwenden …</option>' +
+  sel.innerHTML = `<option value="">${t('Apply template …')}</option>` +
     templatesCache.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
   sel.value = '';
 }
@@ -2161,11 +2188,11 @@ document.getElementById('template-select').addEventListener('change', (e) => {
   document.getElementById('f-dedupe').checked = Boolean(s.dedupe);
   toggleMultipartField();
   toggleAuthFields();
-  showToast(`Vorlage "${tpl.name}" angewendet`, 'success');
+  showToast(t('Template “{name}” applied', { name: tpl.name }), 'success');
 });
 
 document.getElementById('btn-save-template').addEventListener('click', async () => {
-  const name = prompt('Name der Vorlage:', document.getElementById('f-name').value.trim() || 'Neue Vorlage');
+  const name = prompt(t('Template name:'), document.getElementById('f-name').value.trim() || t('New template'));
   if (!name) return;
   const job = {
     filePattern: document.getElementById('f-filePattern').value.trim() || '*',
@@ -2186,7 +2213,7 @@ document.getElementById('btn-save-template').addEventListener('click', async () 
     mailBetreff: document.getElementById('f-mailBetreff').value,
     maxVersuche: Number(document.getElementById('f-maxVersuche').value),
     wartezeitBasisSec: Number(document.getElementById('f-wartezeitBasisSec').value) || 60,
-    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantaene',
+    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantine',
     method: document.getElementById('f-method').value,
     uploadMode: document.getElementById('f-uploadMode').value,
     multipartField: document.getElementById('f-multipartField').value.trim(),
@@ -2219,12 +2246,12 @@ document.getElementById('btn-save-template').addEventListener('click', async () 
   };
   try {
     await api('/templates', { method: 'POST', body: JSON.stringify({ name, job }) });
-    showToast(`Vorlage "${name}" gespeichert`, 'success');
+    showToast(t('Template “{name}” saved', { name }), 'success');
     await loadTemplatesIntoSelect();
   } catch (err) { showToast(err.message, 'error'); }
 });
 
-// ---------- Selbstdiagnose-Banner ----------
+// ---------- Self-check banner ----------
 
 let selfcheckDismissed = false;
 
@@ -2234,14 +2261,14 @@ async function loadSelfCheck() {
   let sc;
   try { sc = await api('/selfcheck'); } catch { return; }
   if (!sc.problems || sc.problems.length === 0) { el.classList.add('hidden'); return; }
-  // Einklappbar wie die Konfigurationshinweise — offener Zustand bleibt erhalten
+  // Collapsible like the configuration hints — the open state is kept
   const warOffen = el.open;
   el.innerHTML = `<summary>
-      <strong>${sc.problems.length} Job${sc.problems.length === 1 ? '' : 's'} mit Problemen</strong>
-      <span class="banner-aktion">anzeigen</span>
+      <strong>${sc.problems.length === 1 ? t('1 job with problems') : t('{n} jobs with problems', { n: sc.problems.length })}</strong>
+      <span class="banner-aktion">${t('show')}</span>
     </summary>
     <ul>${sc.problems.map((p) => `<li><strong>${escapeHtml(p.jobName)}</strong> — ${escapeHtml(p.problem)}</li>`).join('')}</ul>
-    <button class="btn btn-ghost dismiss" style="margin-top:8px">Ausblenden</button>`;
+    <button class="btn btn-ghost dismiss" style="margin-top:8px">${t('Hide')}</button>`;
   el.open = warOffen;
   el.classList.remove('hidden');
 }
@@ -2252,32 +2279,32 @@ document.getElementById('selfcheck-banner').addEventListener('click', (e) => {
   }
 });
 
-// ---------- Änderungsprotokoll ----------
+// ---------- Change log ----------
 
 const auditBackdrop = document.getElementById('audit-backdrop');
 
 document.getElementById('btn-show-audit').addEventListener('click', async () => {
   auditBackdrop.classList.add('open');
   const listEl = document.getElementById('audit-list');
-  listEl.innerHTML = '<p class="chart-empty">Wird geladen …</p>';
+  listEl.innerHTML = `<p class="chart-empty">${t('Loading …')}</p>`;
   let entries;
   try { entries = await api('/audit'); } catch (err) { listEl.innerHTML = `<p class="chart-empty">${escapeHtml(err.message)}</p>`; return; }
-  if (entries.length === 0) { listEl.innerHTML = '<p class="chart-empty">Noch keine Änderungen protokolliert.</p>'; return; }
+  if (entries.length === 0) { listEl.innerHTML = `<p class="chart-empty">${t('No changes logged yet.')}</p>`; return; }
 
   const beschreibung = (a) => {
-    if (a.action === 'anmeldung') return `<strong>${escapeHtml(a.benutzer || '')}</strong> hat sich angemeldet`;
-    if (a.action === 'abmeldung') return `<strong>${escapeHtml(a.benutzer || '')}</strong> hat sich abgemeldet`;
-    if (a.action === 'anmeldung.fehlgeschlagen') return `Fehlgeschlagene Anmeldung für „${escapeHtml(a.benutzer || '')}“`;
-    if (a.action === 'benutzer.anlegen') return `Benutzer „${escapeHtml(a.betroffen || '')}“ angelegt`;
-    if (a.action === 'benutzer.loeschen') return `Benutzer „${escapeHtml(a.betroffen || '')}“ entfernt`;
-    if (a.action === 'benutzer.passwort') return `Passwort von „${escapeHtml(a.betroffen || '')}“ geändert`;
-    if (a.action === 'job.create') return `Job „${escapeHtml(a.jobName)}“ angelegt`;
-    if (a.action === 'job.update') return `Job „${escapeHtml(a.jobName)}“ geändert${a.fields && a.fields.length ? ` <span class="fields">(${a.fields.map(escapeHtml).join(', ')})</span>` : ''}`;
-    if (a.action === 'job.delete') return `Job „${escapeHtml(a.jobName)}“ gelöscht`;
-    if (a.action === 'job.bulk') return `Sammelaktion „${escapeHtml(a.action2 || a.actionName || a.actionType || a.action)}“ auf ${a.affected} Job(s)`;
-    if (a.action === 'category.rename') return `Kategorie „${escapeHtml(a.from)}“ → „${escapeHtml(a.to || '– entfernt –')}“ (${a.affected} Job(s))`;
-    if (a.action === 'template.create') return `Vorlage „${escapeHtml(a.templateName)}“ gespeichert`;
-    if (a.action === 'template.delete') return 'Vorlage gelöscht';
+    if (a.action === 'anmeldung') return t('<strong>{user}</strong> signed in', { user: escapeHtml(a.benutzer || '') });
+    if (a.action === 'abmeldung') return t('<strong>{user}</strong> signed out', { user: escapeHtml(a.benutzer || '') });
+    if (a.action === 'anmeldung.fehlgeschlagen') return t('Failed sign-in for “{user}”', { user: escapeHtml(a.benutzer || '') });
+    if (a.action === 'benutzer.anlegen') return t('User “{user}” created', { user: escapeHtml(a.betroffen || '') });
+    if (a.action === 'benutzer.loeschen') return t('User “{user}” removed', { user: escapeHtml(a.betroffen || '') });
+    if (a.action === 'benutzer.passwort') return t('Password of “{user}” changed', { user: escapeHtml(a.betroffen || '') });
+    if (a.action === 'job.create') return t('Job “{job}” created', { job: escapeHtml(a.jobName) });
+    if (a.action === 'job.update') return t('Job “{job}” changed', { job: escapeHtml(a.jobName) }) + (a.fields && a.fields.length ? ` <span class="fields">(${a.fields.map(escapeHtml).join(', ')})</span>` : '');
+    if (a.action === 'job.delete') return t('Job “{job}” deleted', { job: escapeHtml(a.jobName) });
+    if (a.action === 'job.bulk') return t('Bulk action “{action}” on {n} job(s)', { action: escapeHtml(a.action2 || a.actionName || a.actionType || a.action), n: a.affected });
+    if (a.action === 'category.rename') return t('Category “{from}” → “{to}” ({n} job(s))', { from: escapeHtml(a.from), to: escapeHtml(a.to || t('– removed –')), n: a.affected });
+    if (a.action === 'template.create') return t('Template “{name}” saved', { name: escapeHtml(a.templateName) });
+    if (a.action === 'template.delete') return t('Template deleted');
     return escapeHtml(a.action);
   };
   const typ = (a) => {
@@ -2296,15 +2323,15 @@ document.getElementById('btn-show-audit').addEventListener('click', async () => 
 document.getElementById('audit-close').addEventListener('click', () => auditBackdrop.classList.remove('open'));
 auditBackdrop.addEventListener('click', (e) => { if (e.target === auditBackdrop) auditBackdrop.classList.remove('open'); });
 
-// ---------- Konfigurations-Sicherungen ----------
+// ---------- Configuration backups ----------
 
 function fmtBackupTime(fileName) {
-  // Dateiname: config-2026-08-26T12-30-45-123Z.json
+  // File name: config-2026-08-26T12-30-45-123Z.json
   const raw = fileName.replace('config-', '').replace('.json', '');
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
   if (!m) return fileName;
   const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
-  return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 async function loadBackups() {
@@ -2312,14 +2339,14 @@ async function loadBackups() {
   let list;
   try { list = await api('/backups'); } catch (err) { el.innerHTML = `<p class="chart-empty">${escapeHtml(err.message)}</p>`; return; }
   if (list.length === 0) {
-    el.innerHTML = '<p class="chart-empty">Noch keine Sicherungen vorhanden.</p>';
+    el.innerHTML = `<p class="chart-empty">${t('No backups yet.')}</p>`;
     return;
   }
   el.innerHTML = list.map((bk, i) => `
     <div class="backup-row">
-      <span class="backup-when">${fmtBackupTime(bk.file)}${i === 0 ? ' <span style="color:var(--text-faint)">(neueste)</span>' : ''}</span>
-      <span class="backup-meta">${bk.jobCount === null ? 'beschädigt' : bk.jobCount + ' Job(s)'}</span>
-      <button type="button" class="btn" data-restore="${escapeHtml(bk.file)}" ${bk.jobCount === null ? 'disabled' : ''}>Wiederherstellen</button>
+      <span class="backup-when">${fmtBackupTime(bk.file)}${i === 0 ? ` <span style="color:var(--text-faint)">${t('(latest)')}</span>` : ''}</span>
+      <span class="backup-meta">${bk.jobCount === null ? t('damaged') : t('{n} job(s)', { n: bk.jobCount })}</span>
+      <button type="button" class="btn" data-restore="${escapeHtml(bk.file)}" ${bk.jobCount === null ? 'disabled' : ''}>${t('Restore')}</button>
     </div>`).join('');
 }
 
@@ -2328,18 +2355,18 @@ document.getElementById('backup-list').addEventListener('click', (e) => {
   if (!btn) return;
   const file = btn.dataset.restore;
   askConfirm(
-    `Die Konfiguration wird auf den Stand vom ${fmtBackupTime(file)} zurückgesetzt. Alle seitdem angelegten oder geänderten Jobs gehen verloren. Der aktuelle Stand wird vorher automatisch gesichert.`,
-    'Wiederherstellen',
+    t('The configuration will be reset to the state of {time}. All jobs created or changed since then will be lost. The current state is backed up automatically first.', { time: fmtBackupTime(file) }),
+    t('Restore'),
     async () => {
       const r = await api('/backups/restore', { method: 'POST', body: JSON.stringify({ file }) });
-      showToast(`Wiederhergestellt — ${r.jobCount} Job(s) aktiv`, 'success');
+      showToast(t('Restored — {n} job(s) active', { n: r.jobCount }), 'success');
       await loadJobs();
       await loadStatus();
       await loadBackups();
     });
 });
 
-// ---------- Konfigurations-Warnungen ----------
+// ---------- Configuration warnings ----------
 
 async function loadConfigWarnings() {
   if (warningsDismissed) return;
@@ -2349,10 +2376,10 @@ async function loadConfigWarnings() {
   if (!list || list.length === 0) { el.classList.add('hidden'); return; }
   const hoch = list.filter((w) => w.severity === 'hoch').length;
   const warOffen = el.open;
-  el.innerHTML = `<summary><strong>${list.length} Hinweis${list.length === 1 ? '' : 'e'} zur Konfiguration</strong>${hoch ? `<span class="sev hoch" style="margin-left:8px">${hoch} kritisch</span>` : ''}<span class="banner-aktion">anzeigen</span></summary>
-    <ul>${list.map((w) => `<li><span class="sev ${w.severity}">${w.severity}</span>${escapeHtml(w.text)}</li>`).join('')}</ul>
-    <button class="btn btn-ghost dismiss" style="margin-top:8px">Hinweise ausblenden</button>`;
-  el.open = warOffen; // Zustand über Aktualisierungen hinweg beibehalten
+  el.innerHTML = `<summary><strong>${list.length === 1 ? t('1 configuration notice') : t('{n} configuration notices', { n: list.length })}</strong>${hoch ? `<span class="sev hoch" style="margin-left:8px">${t('{n} critical', { n: hoch })}</span>` : ''}<span class="banner-aktion">${t('show')}</span></summary>
+    <ul>${list.map((w) => `<li><span class="sev ${w.severity}">${w.severity === 'hoch' ? t('high') : t('medium')}</span>${escapeHtml(w.text)}</li>`).join('')}</ul>
+    <button class="btn btn-ghost dismiss" style="margin-top:8px">${t('Hide notices')}</button>`;
+  el.open = warOffen; // keep the state across refreshes
   el.classList.remove('hidden');
 }
 document.getElementById('warning-banner').addEventListener('click', (e) => {
@@ -2362,7 +2389,7 @@ document.getElementById('warning-banner').addEventListener('click', (e) => {
   }
 });
 
-// ---------- Archiv-Ansicht ----------
+// ---------- Archive view ----------
 
 const btnArchive = document.getElementById('btn-toggle-archive');
 const btnArchivZurueck = document.getElementById('btn-archiv-zurueck');
@@ -2371,9 +2398,9 @@ function setzeArchivAnsicht(an) {
   letzteJobSignatur = null;
   showArchived = an;
   btnArchive.classList.toggle('checked', an);
-  btnArchive.textContent = an ? '✓ Archiv wird angezeigt' : 'Archiv anzeigen';
+  btnArchive.textContent = an ? '✓ ' + t('Showing archive') : t('Show archive');
   btnArchivZurueck.classList.toggle('hidden', !an);
-  document.querySelector('.jobs-panel .panel-head h2').textContent = an ? 'Archiv' : 'Jobs';
+  document.querySelector('.jobs-panel .panel-head h2').textContent = an ? t('Archive') : t('Jobs');
   selectedIds.clear();
   syncBulkBar();
   renderJobs();
@@ -2385,55 +2412,51 @@ btnArchive.addEventListener('click', () => {
 });
 btnArchivZurueck.addEventListener('click', () => setzeArchivAnsicht(false));
 
-// ---------- Werkzeug-Übersicht der PDF-Verarbeitung ----------
+// ---------- Tool overview for PDF processing ----------
 
 document.getElementById('btn-check-tools').addEventListener('click', async () => {
   const el = document.getElementById('tools-result');
-  el.innerHTML = '<p class="chart-empty">Prüfe …</p>';
+  el.innerHTML = `<p class="chart-empty">${t('Checking …')}</p>`;
   let w;
   try { w = await api('/pdf-werkzeuge'); } catch (err) { el.innerHTML = `<p class="chart-empty">${escapeHtml(err.message)}</p>`; return; }
 
   const qf = w.qrFaehigkeit || {};
 
-  // Der eingebaute Leser ist der Normalfall — zuerst und deutlich
+  // The built-in reader is the normal case — first and prominent
   const eingebaut = `
     <div class="tool-row ok">
-      <div class="kopf"><span>Eingebauter QR-Leser</span><span class="status">aktiv</span></div>
-      <div class="zeile">Wertet eingescannte PDFs ohne Zusatzprogramme aus — eigener JPEG- und QR-Decoder mit Fehlerkorrektur.</div>
-      ${w.eigenerQrBefehl ? `<div class="zeile">Eigener QR-Befehl hinterlegt, dieser hat Vorrang: ${escapeHtml(w.eigenerQrBefehl)}</div>` : ''}
+      <div class="kopf"><span>${t('Built-in QR reader')}</span><span class="status">${t('active')}</span></div>
+      <div class="zeile">${t('Evaluates scanned PDFs without additional programs — own JPEG and QR decoder with error correction.')}</div>
+      ${w.eigenerQrBefehl ? `<div class="zeile">${t('A custom QR command is configured and takes precedence: {command}', { command: escapeHtml(w.eigenerQrBefehl) })}</div>` : ''}
     </div>`;
 
   const optional = (d, zweck) => `
     <div class="tool-row">
       <div class="kopf">
         <span>${escapeHtml(d.name)}</span>
-        <span class="status" style="color:var(--text-faint)">optional — ${d.ok ? 'vorhanden' : 'nicht vorhanden'}</span>
+        <span class="status" style="color:var(--text-faint)">${d.ok ? t('optional — available') : t('optional — not available')}</span>
       </div>
       <div class="zeile">${escapeHtml(zweck)}</div>
-      ${d.ok ? `<div class="zeile">Pfad: ${escapeHtml(d.pfad)}</div>` : ''}
+      ${d.ok ? `<div class="zeile">${t('Path: {path}', { path: escapeHtml(d.pfad) })}</div>` : ''}
     </div>`;
 
   el.innerHTML = eingebaut
-    + `<p style="font-size:11.5px;color:var(--text-faint);margin:12px 0 8px">
-         Die folgenden Programme sind <strong>nicht erforderlich</strong>. Sie dienen nur als
-         Rückfall, falls ein PDF nicht direkt auswertbar ist — etwa bei CCITT- oder
-         JBIG2-komprimierten Schwarzweiß-Scans.
-       </p>`
-    + optional(w.pdftoppm, 'Rendert PDF-Seiten als Bild')
-    + optional(w.pdftocairo, 'Zweiter Renderweg')
-    + optional(w.zbarimg, 'Externer Barcode-Leser')
+    + `<p style="font-size:11.5px;color:var(--text-faint);margin:12px 0 8px">${t('The following programs are <strong>not required</strong>. They only serve as a fallback if a PDF cannot be evaluated directly — for example JBIG2-compressed black-and-white scans.')}</p>`
+    + optional(w.pdftoppm, t('Renders PDF pages as images'))
+    + optional(w.pdftocairo, t('Second rendering path'))
+    + optional(w.zbarimg, t('External barcode reader'))
     + (qf.pruefbar && !qf.kannQr
-        ? `<div class="tool-row"><div class="zeile" style="color:var(--text-dim)">Das vorhandene zbarimg beherrscht keine QR-Codes. Für die Erkennung wird ohnehin der eingebaute Leser verwendet.</div></div>`
+        ? `<div class="tool-row"><div class="zeile" style="color:var(--text-dim)">${t('The installed zbarimg cannot read QR codes. The built-in reader is used for detection anyway.')}</div></div>`
         : '');
 });
 
-// ---------- Vorschau der Metadaten-Vorlage ----------
+// ---------- Preview of the metadata template ----------
 
 document.getElementById('btn-preview-metadata').addEventListener('click', async () => {
   const statusEl = document.getElementById('metadata-preview-result');
   const ausgabeEl = document.getElementById('metadata-preview');
   statusEl.className = '';
-  statusEl.textContent = 'Erzeuge …';
+  statusEl.textContent = t('Generating …');
   try {
     const r = await api('/metadata-vorschau', {
       method: 'POST',
@@ -2447,7 +2470,7 @@ document.getElementById('btn-preview-metadata').addEventListener('click', async 
       }),
     });
     statusEl.className = r.gueltig ? 'ok' : 'error';
-    statusEl.textContent = r.gueltig ? '✓ gültiges JSON' : '✗ ungültiges JSON: ' + r.fehler;
+    statusEl.textContent = r.gueltig ? '✓ ' + t('valid JSON') : '✗ ' + t('invalid JSON: {error}', { error: r.fehler });
     ausgabeEl.textContent = r.text;
     ausgabeEl.classList.remove('hidden');
   } catch (err) {
@@ -2456,7 +2479,7 @@ document.getElementById('btn-preview-metadata').addEventListener('click', async 
   }
 });
 
-// ---------- Formular-Abschnitte: nur Abweichungen automatisch aufklappen ----------
+// ---------- Form sections: only expand deviations automatically ----------
 
 function aktualisiereFormularAbschnitte(job) {
   const wert = (id) => (document.getElementById(id) || {}).value;
@@ -2469,8 +2492,8 @@ function aktualisiereFormularAbschnitte(job) {
       || (wert('f-curlExtraArgs') || '').trim() !== '',
     'sec-nachher': () => wert('f-onSuccess') !== 'archive'
       || wert('f-onError') !== 'keep'
-      || (wert('f-archiveSubfolder') || '_gesendet') !== '_gesendet'
-      || (wert('f-errorSubfolder') || '_fehler') !== '_fehler'
+      || (wert('f-archiveSubfolder') || '_sent') !== '_sent'
+      || (wert('f-errorSubfolder') || '_error') !== '_error'
       || Number(wert('f-archiveRetentionDays')) > 0,
     'sec-zeitfenster': () => document.getElementById('f-scheduleEnabled').checked,
     'sec-extras': () => (wert('f-extraTargetUrls') || '').trim() !== '' || (wert('f-notes') || '').trim() !== '',
@@ -2482,20 +2505,20 @@ function aktualisiereFormularAbschnitte(job) {
     let abweichend = false;
     try { abweichend = Boolean(pruefe()); } catch { abweichend = false; }
     el.classList.toggle('geaendert', abweichend);
-    // Beim Bearbeiten aufklappen, damit gesetzte Werte nicht übersehen werden.
-    // Bei neuen Jobs bleibt alles zu, damit die Maske schlank startet.
+    // Expand when editing so that values that are set are not overlooked.
+    // For new jobs everything stays collapsed so that the form starts lean.
     el.open = Boolean(job) && abweichend;
   });
 }
 
-// ---------- Gesendete Daten prüfen ----------
+// ---------- Inspect sent data ----------
 
 const sendeBackdrop = document.getElementById('sende-backdrop');
 
 async function zeigeSendevorschau(jobId, file) {
   sendeBackdrop.classList.add('open');
   const el = document.getElementById('sende-inhalt');
-  el.innerHTML = '<p class="chart-empty">Wird ermittelt — die Datei wird verarbeitet, aber NICHT gesendet …</p>';
+  el.innerHTML = `<p class="chart-empty">${t('Determining — the file is processed but NOT sent …')}</p>`;
   let r;
   try {
     r = await api('/sendevorschau', { method: 'POST', body: JSON.stringify({ jobId, file }) });
@@ -2504,7 +2527,7 @@ async function zeigeSendevorschau(jobId, file) {
     return;
   }
   if (r.fehler) {
-    el.innerHTML = `<div class="tool-row fehlt"><div class="kopf"><span>Verarbeitung fehlgeschlagen</span></div><div class="grund">${escapeHtml(r.fehler)}</div></div>`;
+    el.innerHTML = `<div class="tool-row fehlt"><div class="kopf"><span>${t('Processing failed')}</span></div><div class="grund">${escapeHtml(r.fehler)}</div></div>`;
     return;
   }
   if (r.modus === 'roh') {
@@ -2515,46 +2538,44 @@ async function zeigeSendevorschau(jobId, file) {
 
   el.innerHTML = `
     <div class="tool-row ${r.qrGefunden ? 'ok' : 'fehlt'}" style="margin-bottom:12px">
-      <div class="kopf"><span>QR-Code</span><span class="status">${r.qrGefunden ? 'erkannt' : 'nicht erkannt'}</span></div>
-      <div class="zeile">Wert: ${r.qrWert === null ? '– keiner –' : escapeHtml(String(r.qrWert))}</div>
-      <div class="zeile">Bildquelle: ${escapeHtml(r.bildquelle || '–')}</div>
+      <div class="kopf"><span>${t('QR code')}</span><span class="status">${r.qrGefunden ? t('detected') : t('not detected')}</span></div>
+      <div class="zeile">${t('Value: {value}', { value: r.qrWert === null ? t('– none –') : escapeHtml(String(r.qrWert)) })}</div>
+      <div class="zeile">${t('Image source: {source}', { source: escapeHtml(r.bildquelle || '–') })}</div>
       ${r.qrHinweis ? `<div class="grund">${escapeHtml(r.qrHinweis)}</div>` : ''}
     </div>
 
     <div class="tool-row" style="margin-bottom:12px">
-      <div class="kopf"><span>PDF-Aufbau</span><span class="status" style="color:var(--text-faint)">${r.textebene && r.textebene.hatTextebene ? 'mit Textebene' : 'reiner Scan'}</span></div>
-      <div class="zeile">${r.textebene ? `Textzeichen: ${r.textebene.textZeichen} · Schriften: ${r.textebene.schriften}` : ''}</div>
-      <div class="zeile">${r.bildarten ? `Bilder: ${r.bildarten.bilder} (JPEG ${r.bildarten.jpeg}, CCITT ${r.bildarten.ccitt}, JBIG2 ${r.bildarten.jbig2})` : ''}</div>
+      <div class="kopf"><span>${t('PDF structure')}</span><span class="status" style="color:var(--text-faint)">${r.textebene && r.textebene.hatTextebene ? t('with text layer') : t('pure scan')}</span></div>
+      <div class="zeile">${r.textebene ? t('Text characters: {chars} · Fonts: {fonts}', { chars: r.textebene.textZeichen, fonts: r.textebene.schriften }) : ''}</div>
+      <div class="zeile">${r.bildarten ? t('Images: {n} (JPEG {jpeg}, CCITT {ccitt}, JBIG2 {jbig2})', { n: r.bildarten.bilder, jpeg: r.bildarten.jpeg, ccitt: r.bildarten.ccitt, jbig2: r.bildarten.jbig2 }) : ''}</div>
       <div class="zeile" style="color:var(--text-faint)">${r.textebene && r.textebene.hatTextebene
-        ? 'Felder ließen sich grundsätzlich aus dem Text auslesen.'
-        : 'Ohne Textebene sind nur QR-Code und Dateiname als Quelle verfügbar.'}</div>
+        ? t('Fields could in principle be read from the text.')
+        : t('Without a text layer, only the QR code and the file name are available as sources.')}</div>
     </div>
 
-    <p class="drawer-section-title" style="margin:0 0 6px">Übertragungsart</p>
+    <p class="drawer-section-title" style="margin:0 0 6px">${t('Transfer type')}</p>
     <div class="zeile" style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-dim);margin-bottom:12px">
       ${r.modus === 'multipart'
-        ? `multipart/form-data · Felder: <strong>${escapeHtml(r.felder.datei)}</strong> (PDF) und <strong>${escapeHtml(r.felder.metadaten)}</strong> (JSON)`
-        : 'JSON-Rumpf mit eingebettetem PDF'}
-      <br>Ziel: ${escapeHtml(r.zielUrl)}
+        ? 'multipart/form-data · ' + t('Fields: <strong>{file}</strong> (PDF) and <strong>{meta}</strong> (JSON)', { file: escapeHtml(r.felder.datei), meta: escapeHtml(r.felder.metadaten) })
+        : t('JSON body with embedded PDF')}
+      <br>${t('Target: {target}', { target: escapeHtml(r.zielUrl) })}
       ${r.header && r.header.length ? '<br>Header: ' + r.header.map(escapeHtml).join(' · ') : ''}
     </div>
 
     <p class="drawer-section-title" style="margin:0 0 6px">
-      Feldinhalt <span style="font-weight:400;color:var(--text-faint)">(${r.groesse} Bytes)</span>
-      ${r.istJson ? '<span style="color:var(--success)">· gültiges JSON</span>' : `<span style="color:var(--error)">· KEIN gültiges JSON: ${escapeHtml(r.jsonFehler || '')}</span>`}
+      ${t('Field content')} <span style="font-weight:400;color:var(--text-faint)">(${t('{n} bytes', { n: r.groesse })})</span>
+      ${r.istJson ? `<span style="color:var(--success)">· ${t('valid JSON')}</span>` : `<span style="color:var(--error)">· ${t('NOT valid JSON: {error}', { error: escapeHtml(r.jsonFehler || '') })}</span>`}
     </p>
     <pre class="preview-list" style="white-space:pre-wrap;max-height:260px">${escapeHtml(r.inhalt || '')}</pre>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <a class="btn" href="/api/sendevorschau/download?jobId=${encodeURIComponent(jobId)}&file=${encodeURIComponent(file)}" style="text-decoration:none">↓ JSON herunterladen</a>
-      ${r.modus === 'json' ? `<a class="btn btn-ghost" href="/api/sendevorschau/download?jobId=${encodeURIComponent(jobId)}&file=${encodeURIComponent(file)}&voll=1" style="text-decoration:none">↓ inkl. eingebettetem PDF</a>` : ''}
+      <a class="btn" href="/api/sendevorschau/download?jobId=${encodeURIComponent(jobId)}&file=${encodeURIComponent(file)}&lang=${SPRACHE}" style="text-decoration:none">↓ ${t('Download JSON')}</a>
+      ${r.modus === 'json' ? `<a class="btn btn-ghost" href="/api/sendevorschau/download?jobId=${encodeURIComponent(jobId)}&file=${encodeURIComponent(file)}&voll=1&lang=${SPRACHE}" style="text-decoration:none">↓ ${t('incl. embedded PDF')}</a>` : ''}
     </div>
 
-    <p class="drawer-section-title" style="margin:14px 0 6px">Entsprechender curl-Aufruf</p>
+    <p class="drawer-section-title" style="margin:14px 0 6px">${t('Equivalent curl call')}</p>
     <pre class="preview-list" style="white-space:pre-wrap">${escapeHtml(r.curl)}</pre>
-    <p style="font-size:11.5px;color:var(--text-faint);margin-top:8px">
-      Hinweis: Für diese Ansicht wurde die Datei erneut verarbeitet, aber nichts gesendet.
-    </p>`;
+    <p style="font-size:11.5px;color:var(--text-faint);margin-top:8px">${t('Note: for this view the file was processed again, but nothing was sent.')}</p>`;
 }
 
 document.getElementById('sende-close').addEventListener('click', () => sendeBackdrop.classList.remove('open'));
@@ -2570,7 +2591,7 @@ sendeBackdrop.addEventListener('click', (e) => { if (e.target === sendeBackdrop)
   });
 });
 
-// ---------- Benutzer & Anmeldung ----------
+// ---------- Users & sign-in ----------
 
 async function ladeBenutzer() {
   const el = document.getElementById('benutzer-liste');
@@ -2578,7 +2599,7 @@ async function ladeBenutzer() {
   let liste;
   try { liste = await api('/benutzer'); } catch (err) { el.innerHTML = `<p class="chart-empty">${escapeHtml(err.message)}</p>`; return; }
   if (liste.length === 0) {
-    el.innerHTML = '<p class="chart-empty">Noch kein Benutzer angelegt — die Anwendung ist ohne Anmeldung erreichbar.</p>';
+    el.innerHTML = `<p class="chart-empty">${t('No user created yet — the application can be used without signing in.')}</p>`;
     return;
   }
   el.innerHTML = liste.map((b) => `
@@ -2587,9 +2608,9 @@ async function ladeBenutzer() {
         <strong>${escapeHtml(b.anzeigename)}</strong>
         <span class="benutzer-kennung">${escapeHtml(b.name)}</span>
       </span>
-      <span class="benutzer-rolle">${{ verwaltung: 'Verwaltung', betrachter: 'Betrachter', benutzer: 'Benutzer' }[b.rolle] || 'Benutzer'}</span>
-      <button class="btn" data-pw="${b.id}" data-name="${escapeHtml(b.anzeigename)}">Passwort ändern</button>
-      <button class="btn btn-ghost" data-del="${b.id}" data-name="${escapeHtml(b.anzeigename)}">Entfernen</button>
+      <span class="benutzer-rolle">${t({ verwaltung: 'Administrator', betrachter: 'Viewer', benutzer: 'User' }[b.rolle] || 'User')}</span>
+      <button class="btn" data-pw="${b.id}" data-name="${escapeHtml(b.anzeigename)}">${t('Change password')}</button>
+      <button class="btn btn-ghost" data-del="${b.id}" data-name="${escapeHtml(b.anzeigename)}">${t('Remove')}</button>
     </div>`).join('');
 }
 
@@ -2599,24 +2620,24 @@ document.getElementById('benutzer-liste').addEventListener('click', async (e) =>
   const ergebnis = document.getElementById('benutzer-ergebnis');
 
   if (pw) {
-    const neu = prompt(`Neues Passwort für „${pw.dataset.name}“ (mindestens 4 Zeichen):`);
+    const neu = prompt(t('New password for “{user}” (at least 4 characters):', { user: pw.dataset.name }));
     if (!neu) return;
     try {
       await api(`/benutzer/${pw.dataset.pw}/passwort`, { method: 'POST', body: JSON.stringify({ passwort: neu }) });
       ergebnis.className = 'ok';
-      ergebnis.textContent = `Passwort für „${pw.dataset.name}“ geändert.`;
-      showToast('Passwort geändert', 'success');
+      ergebnis.textContent = t('Password for “{user}” changed.', { user: pw.dataset.name });
+      showToast(t('Password changed'), 'success');
     } catch (err) { ergebnis.className = 'error'; ergebnis.textContent = err.message; }
     return;
   }
 
   if (del) {
     askConfirm(
-      `Benutzer „${del.dataset.name}“ wird entfernt und laufende Anmeldungen dieses Benutzers werden beendet.`,
-      'Entfernen',
+      t('User “{user}” will be removed and their active sessions will be ended.', { user: del.dataset.name }),
+      t('Remove'),
       async () => {
         await api(`/benutzer/${del.dataset.del}`, { method: 'DELETE' });
-        showToast(`„${del.dataset.name}“ entfernt`, 'success');
+        showToast(t('“{user}” removed', { user: del.dataset.name }), 'success');
         await ladeBenutzer();
         await ladeAnmeldestatus();
       });
@@ -2632,9 +2653,9 @@ document.getElementById('btn-benutzer-anlegen').addEventListener('click', async 
   try {
     await api('/benutzer', { method: 'POST', body: JSON.stringify({ name, anzeigename, passwort, rolle }) });
     ergebnis.className = 'ok';
-    ergebnis.textContent = `Benutzer „${anzeigename || name}“ angelegt.`;
+    ergebnis.textContent = t('User “{user}” created.', { user: anzeigename || name });
     ['neu-benutzer-name', 'neu-benutzer-anzeige', 'neu-benutzer-passwort'].forEach((id) => { document.getElementById(id).value = ''; });
-    showToast('Benutzer angelegt', 'success');
+    showToast(t('User created'), 'success');
     await ladeBenutzer();
     await ladeAnmeldestatus();
     markiereSettingsGespeichert();
@@ -2660,7 +2681,7 @@ async function ladeAnmeldestatus() {
 }
 
 document.getElementById('btn-abmelden').addEventListener('click', async () => {
-  try { await api('/abmelden', { method: 'POST' }); } catch { /* egal */ }
+  try { await api('/abmelden', { method: 'POST' }); } catch { /* ignore */ }
   window.location.href = '/anmelden.html';
 });
 
@@ -2668,11 +2689,11 @@ ladeAnmeldestatus();
 zeigeStandardKopf();
 ladeKopf();
 
-// ---------- Probelauf im Job-Formular ----------
+// ---------- Trial run in the job form ----------
 
 function entwurfAusFormular() {
   return {
-    name: document.getElementById('f-name').value.trim() || 'Entwurf',
+    name: document.getElementById('f-name').value.trim() || t('Draft'),
     sourcePath: document.getElementById('f-sourcePath').value.trim(),
     filePattern: document.getElementById('f-filePattern').value.trim() || '*',
     maxFileSizeMB: Number(document.getElementById('f-maxFileSizeMB').value) || 0,
@@ -2690,7 +2711,7 @@ function entwurfAusFormular() {
     mailBetreff: document.getElementById('f-mailBetreff').value,
     maxVersuche: Number(document.getElementById('f-maxVersuche').value),
     wartezeitBasisSec: Number(document.getElementById('f-wartezeitBasisSec').value) || 60,
-    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantaene',
+    quarantaeneSubfolder: document.getElementById('f-quarantaeneSubfolder').value.trim() || '_quarantine',
     method: document.getElementById('f-method').value,
     headers: document.getElementById('f-headers').value.split('\n').map((x) => x.trim()).filter(Boolean),
     processor: document.getElementById('f-processor').value,
@@ -2705,8 +2726,8 @@ function entwurfAusFormular() {
     metadataVorlage: document.getElementById('f-metadataVorlage').value,
     auftragsnummer: document.getElementById('f-auftragsnummer').value.trim(),
     dateinameRegex: document.getElementById('f-dateinameRegex').value.trim(),
-    archiveSubfolder: document.getElementById('f-archiveSubfolder').value.trim() || '_gesendet',
-    errorSubfolder: document.getElementById('f-errorSubfolder').value.trim() || '_fehler',
+    archiveSubfolder: document.getElementById('f-archiveSubfolder').value.trim() || '_sent',
+    errorSubfolder: document.getElementById('f-errorSubfolder').value.trim() || '_error',
   };
 }
 
@@ -2717,11 +2738,11 @@ document.getElementById('btn-probelauf').addEventListener('click', async () => {
 
   if (!entwurf.sourcePath) {
     status.className = 'error';
-    status.textContent = 'Bitte zuerst den Quell-Ordner eintragen.';
+    status.textContent = t('Please enter the source folder first.');
     return;
   }
   status.className = 'pending';
-  status.textContent = 'Probelauf läuft …';
+  status.textContent = t('Test run in progress …');
   ergebnis.classList.add('hidden');
 
   let r;
@@ -2735,50 +2756,50 @@ document.getElementById('btn-probelauf').addEventListener('click', async () => {
 
   if (!r.ok) {
     status.className = 'error';
-    status.textContent = r.meldung || 'Probelauf nicht möglich.';
+    status.textContent = r.meldung || t('Test run not possible.');
     ergebnis.classList.add('hidden');
     return;
   }
 
   status.className = 'ok';
-  status.textContent = `✓ geprüft mit „${r.datei}“`;
+  status.textContent = '✓ ' + t('checked with “{file}”', { file: r.datei });
 
   const teile = [];
-  teile.push(`<div class="probe-zeile">Gefundene Dateien: <strong>${r.gefunden}</strong>${r.wartend ? ` · ${r.wartend} warten auf Ruhezeit` : ''}${r.zuGross && r.zuGross.length ? ` · ${r.zuGross.length} zu groß` : ''}</div>`);
+  teile.push(`<div class="probe-zeile">${t('Files found: <strong>{n}</strong>', { n: r.gefunden })}${r.wartend ? ' · ' + t('{n} waiting for settle time', { n: r.wartend }) : ''}${r.zuGross && r.zuGross.length ? ' · ' + t('{n} too large', { n: r.zuGross.length }) : ''}</div>`);
 
   if (r.modus === 'roh') {
     teile.push(`<div class="probe-zeile">${escapeHtml(r.hinweis)}</div>`);
     teile.push(`<pre>${escapeHtml(r.curl)}</pre>`);
   } else {
-    teile.push(`<div class="probe-zeile">QR-Code: <strong style="color:${r.qrGefunden ? 'var(--success)' : 'var(--error)'}">${r.qrGefunden ? escapeHtml(String(r.qrWert)) : 'nicht erkannt'}</strong>${r.bildquelle ? ` · Quelle: ${escapeHtml(r.bildquelle)}` : ''}</div>`);
+    teile.push(`<div class="probe-zeile">${t('QR code')}: <strong style="color:${r.qrGefunden ? 'var(--success)' : 'var(--error)'}">${r.qrGefunden ? escapeHtml(String(r.qrWert)) : t('not detected')}</strong>${r.bildquelle ? ' · ' + t('Source: {source}', { source: escapeHtml(r.bildquelle) }) : ''}</div>`);
     if (!r.qrGefunden && r.qrHinweis) teile.push(`<div class="probe-zeile" style="color:var(--error)">${escapeHtml(r.qrHinweis)}</div>`);
     if (r.modus === 'multipart') {
-      teile.push(`<div class="probe-zeile">Felder: <strong>${escapeHtml(r.felder.datei)}</strong> (PDF) und <strong>${escapeHtml(r.felder.metadaten)}</strong></div>`);
+      teile.push(`<div class="probe-zeile">${t('Fields: <strong>{file}</strong> (PDF) and <strong>{meta}</strong> (JSON)', { file: escapeHtml(r.felder.datei), meta: escapeHtml(r.felder.metadaten) })}</div>`);
     }
-    teile.push(`<div class="probe-zeile">${r.istJson ? '<span style="color:var(--success)">gültiges JSON</span>' : `<span style="color:var(--error)">kein gültiges JSON: ${escapeHtml(r.jsonFehler || '')}</span>`}</div>`);
+    teile.push(`<div class="probe-zeile">${r.istJson ? `<span style="color:var(--success)">${t('valid JSON')}</span>` : `<span style="color:var(--error)">${t('invalid JSON: {error}', { error: escapeHtml(r.jsonFehler || '') })}</span>`}</div>`);
     teile.push(`<pre>${escapeHtml(r.inhalt || '')}</pre>`);
   }
   ergebnis.innerHTML = teile.join('');
   ergebnis.classList.remove('hidden');
 });
 
-// ---------- Rollen in der Oberfläche wirksam machen ----------
+// ---------- Applying roles in the interface ----------
 
 let darfVerwalten = true;
 let darfAendern = true;
 
 function wendeRolleAn() {
-  // Betrachter dürfen nichts verändern — alle Bedienelemente dafür ausblenden
+  // Viewers may not change anything — hide all controls for that
   document.body.classList.toggle('nur-lesen', !darfAendern);
   const neuerJob = document.getElementById('btn-new-job');
-  if (neuerJob) { neuerJob.disabled = !darfAendern; if (!darfAendern) neuerJob.title = 'Betrachter dürfen keine Jobs anlegen'; }
+  if (neuerJob) { neuerJob.disabled = !darfAendern; if (!darfAendern) neuerJob.title = t('Viewers cannot create jobs'); }
   const auswahl = document.getElementById('btn-toggle-select');
   if (auswahl) auswahl.disabled = !darfAendern;
 
-  // Schaltflächen, die nur die Verwaltung nutzen darf
+  // Buttons that only administrators may use
   const sperren = [
-    ['btn-open-settings', 'Einstellungen sind der Verwaltung vorbehalten'],
-    ['btn-reset-stats', 'Protokoll zurücksetzen ist der Verwaltung vorbehalten'],
+    ['btn-open-settings', t('Settings are reserved for administrators')],
+    ['btn-reset-stats', t('Resetting the log is reserved for administrators')],
   ];
   sperren.forEach(([id, titel]) => {
     const el = document.getElementById(id);
@@ -2790,7 +2811,7 @@ function wendeRolleAn() {
   const transfer = document.getElementById('btn-open-transfer');
   if (transfer) {
     transfer.disabled = !darfVerwalten;
-    if (!darfVerwalten) transfer.title = 'Export und Import sind der Verwaltung vorbehalten';
+    if (!darfVerwalten) transfer.title = t('Export and import are reserved for administrators');
   }
   document.body.classList.toggle('nur-benutzer', !darfVerwalten);
 }
@@ -2802,9 +2823,9 @@ document.getElementById('btn-save-joboverview').addEventListener('click', async 
     await api('/settings', { method: 'PUT', body: JSON.stringify({ jobUebersichtImLogin: an }) });
     ergebnis.className = 'ok';
     ergebnis.textContent = an
-      ? 'Job-Übersicht erscheint jetzt auf dem Anmeldebildschirm.'
-      : 'Job-Übersicht auf dem Anmeldebildschirm ausgeblendet.';
-    showToast('Einstellung gespeichert', 'success');
+      ? t('The job overview now appears on the sign-in screen.')
+      : t('Job overview hidden on the sign-in screen.');
+    showToast(t('Setting saved'), 'success');
     markiereSettingsGespeichert();
   } catch (err) {
     ergebnis.className = 'error';
@@ -2812,22 +2833,23 @@ document.getElementById('btn-save-joboverview').addEventListener('click', async 
   }
 });
 
-// ---------- Warteschlange ----------
+// ---------- Queue ----------
 
 const warteBackdrop = document.getElementById('warte-backdrop');
 
 async function zeigeWarteschlange(jobId, jobName) {
   warteBackdrop.classList.add('open');
-  document.getElementById('warte-titel').textContent = `Warteschlange · ${jobName}`;
+  document.getElementById('warte-titel').textContent = `${t('Queue')} · ${jobName}`;
+  document.getElementById('warte-titel').dataset.jobName = jobName;
   const el = document.getElementById('warte-inhalt');
-  el.innerHTML = '<p class="chart-empty">Wird geladen …</p>';
+  el.innerHTML = `<p class="chart-empty">${t('Loading …')}</p>`;
 
   let w;
   try { w = await api('/warteschlange?jobId=' + encodeURIComponent(jobId)); }
   catch (err) { el.innerHTML = `<p class="chart-empty">${escapeHtml(err.message)}</p>`; return; }
 
   if (!w.ok) {
-    el.innerHTML = `<div class="tool-row fehlt"><div class="grund">${escapeHtml(w.meldung || 'Nicht abrufbar')}</div></div>`;
+    el.innerHTML = `<div class="tool-row fehlt"><div class="grund">${escapeHtml(w.meldung || t('Not available'))}</div></div>`;
     return;
   }
 
@@ -2843,27 +2865,27 @@ async function zeigeWarteschlange(jobId, jobName) {
     return `<div class="warte-gruppe">
       <p class="warte-titel"><span class="warte-punkt" style="background:${farbe}"></span>${titel} <span class="warte-zahl">${liste.length}</span></p>
       ${liste.slice(0, 40).map(aufbau).join('')}
-      ${liste.length > 40 ? `<p class="warte-mehr">… und ${liste.length - 40} weitere</p>` : ''}
+      ${liste.length > 40 ? `<p class="warte-mehr">${t('… and {n} more', { n: liste.length - 40 })}</p>` : ''}
     </div>`;
   };
 
   const teile = [];
-  teile.push(gruppe('Wird gerade übertragen', w.inArbeit, 'var(--accent)',
-    (d) => dateiZeile(d, `<span class="warte-lage">seit ${Math.round((Date.now() - d.seit) / 1000)}s</span>`)));
-  teile.push(gruppe('Bereit zur Übertragung', w.bereit, 'var(--success)',
-    (d) => dateiZeile(d, d.versuche ? `<span class="warte-lage">${d.versuche} Versuch(e)</span>` : '')));
-  teile.push(gruppe(`Wartet auf Ruhezeit (${w.ruhezeitSek}s)`, w.wartetAufRuhezeit, 'var(--warning)',
+  teile.push(gruppe(t('Being transferred'), w.inArbeit, 'var(--accent)',
+    (d) => dateiZeile(d, `<span class="warte-lage">${t('for {s}s', { s: Math.round((Date.now() - d.seit) / 1000) })}</span>`)));
+  teile.push(gruppe(t('Ready for transfer'), w.bereit, 'var(--success)',
+    (d) => dateiZeile(d, d.versuche ? `<span class="warte-lage">${t('{n} attempt(s)', { n: d.versuche })}</span>` : '')));
+  teile.push(gruppe(t('Waiting for settle time ({s}s)', { s: w.ruhezeitSek }), w.wartetAufRuhezeit, 'var(--warning)',
     (d) => dateiZeile(d)));
-  teile.push(gruppe('Wartet auf Wiederholung', w.wartetAufWiederholung, 'var(--warning)',
-    (d) => dateiZeile(d, `<span class="warte-lage">Versuch ${d.versuche}${w.maxVersuche ? '/' + w.maxVersuche : ''} · in ${Math.max(0, Math.round((d.naechsterVersuch - Date.now()) / 1000))}s</span>`)));
-  teile.push(gruppe('Übersprungen — zu groß', w.zuGross, 'var(--error)', (d) => dateiZeile(d)));
-  teile.push(gruppe('Im Fehlerordner', w.fehlerordner, 'var(--error)', (d) => dateiZeile(d)));
-  teile.push(gruppe('In Quarantäne', w.quarantaene, 'var(--error)',
-    (d) => dateiZeile(d, `<button class="btn" data-quar="${escapeHtml(d.name)}" data-job="${jobId}">Zurückholen</button>`)));
+  teile.push(gruppe(t('Waiting for retry'), w.wartetAufWiederholung, 'var(--warning)',
+    (d) => dateiZeile(d, `<span class="warte-lage">${t('Attempt {n}', { n: d.versuche + (w.maxVersuche ? '/' + w.maxVersuche : '') })} · ${t('in {s}s', { s: Math.max(0, Math.round((d.naechsterVersuch - Date.now()) / 1000)) })}</span>`)));
+  teile.push(gruppe(t('Skipped — too large'), w.zuGross, 'var(--error)', (d) => dateiZeile(d)));
+  teile.push(gruppe(t('In the error folder'), w.fehlerordner, 'var(--error)', (d) => dateiZeile(d)));
+  teile.push(gruppe(t('In quarantine'), w.quarantaene, 'var(--error)',
+    (d) => dateiZeile(d, `<button class="btn" data-quar="${escapeHtml(d.name)}" data-job="${jobId}">${t('Restore')}</button>`)));
 
-  const leer = teile.every((t) => t === '');
+  const leer = teile.every((x) => x === '');
   el.innerHTML = leer
-    ? '<p class="chart-empty">Derzeit liegt nichts an — der Quell-Ordner ist leer.</p>'
+    ? `<p class="chart-empty">${t('Nothing pending — the source folder is empty.')}</p>`
     : teile.join('');
 }
 
@@ -2874,31 +2896,19 @@ document.getElementById('warte-inhalt').addEventListener('click', async (e) => {
   if (!btn) return;
   try {
     await api('/quarantaene/zurueck', { method: 'POST', body: JSON.stringify({ jobId: btn.dataset.job, file: btn.dataset.quar }) });
-    showToast(`„${btn.dataset.quar}“ zurückgeholt — wird beim nächsten Lauf erneut versucht`, 'success');
-    zeigeWarteschlange(btn.dataset.job, document.getElementById('warte-titel').textContent.replace('Warteschlange · ', ''));
+    showToast(t('“{file}” restored — it will be retried on the next run', { file: btn.dataset.quar }), 'success');
+    zeigeWarteschlange(btn.dataset.job, document.getElementById('warte-titel').dataset.jobName || '');
   } catch (err) { showToast(err.message, 'error'); }
 });
 
-// ---------- Sprache: fest codierte Texte, die JS selbst setzt ----------
-
-// Übersetzt einen deutschen Text ins Englische, wenn Englisch aktiv ist;
-// sonst (oder ohne Treffer) bleibt der deutsche Text stehen.
-function t(text) {
-  if (window.Sprache && window.Sprache.aktiv() === 'en') {
-    const uebersetzt = window.Sprache.uebersetze(text);
-    if (uebersetzt !== null) return uebersetzt;
-  }
-  return text;
-}
-
-// ---------- Kopfzeile: Name und Versionsnummer ----------
+// ---------- Header: name and version number ----------
 
 function zeigeStandardKopf() {
   const name = document.getElementById('brand-name');
   const sub = document.getElementById('brand-sub');
   if (!name || !sub) return;
   name.textContent = 'Folderpost';
-  sub.innerHTML = `${t('UNC-Ordner')} <span class="arrow">→</span> curl <span class="arrow">→</span> ${t('Schnittstelle')}`;
+  sub.innerHTML = `${t('Folder')} <span class="arrow">→</span> curl <span class="arrow">→</span> ${t('API')}`;
 }
 
 async function ladeKopf() {
@@ -2907,36 +2917,36 @@ async function ladeKopf() {
     const el = document.getElementById('versions-nummer');
     if (el && info.version) {
       el.textContent = 'v' + info.version;
-      el.title = `Installierter Programmstand ${info.version}`
-        + (info.baustand ? ` · Paket vom ${new Date(info.baustand).toLocaleString('de-DE')}` : '');
+      el.title = t('Installed version {v}', { v: info.version })
+        + (info.baustand ? ' · ' + t('package of {time}', { time: new Date(info.baustand).toLocaleString(LOCALE) }) : '');
     }
-  } catch { /* ohne Anmeldung nicht abrufbar */ }
+  } catch { /* not available without signing in */ }
 }
 
-// Weist eine verfügbare Aktualisierung an der Versionsnummer aus
+// Shows an available update at the version number
 function markiereAktualisierung(verfuegbar, neueVersion) {
   const el = document.getElementById('versions-nummer');
   if (el) {
     el.classList.toggle('aktualisierung', Boolean(verfuegbar));
-    if (verfuegbar) el.title = `Neue Fassung ${neueVersion} verfügbar — unter Einstellungen einspielen`;
+    if (verfuegbar) el.title = t('New version {v} available — install it in the settings', { v: neueVersion });
   }
   const reiter = document.querySelector('.settings-tab[data-spanel="system"]');
   if (reiter) {
     reiter.classList.toggle('reiter-aktualisierung', Boolean(verfuegbar));
-    if (verfuegbar) reiter.title = `Neue Fassung ${neueVersion} verfügbar`;
+    if (verfuegbar) reiter.title = t('New version {v} available', { v: neueVersion });
   }
 }
 
-// ---------- Aktualisierungen ----------
+// ---------- Updates ----------
 
 async function ladeUpdateStand(s) {
   const el = document.getElementById('update-stand');
   document.getElementById('update-url').value = (s && s.updatePruefUrl) || '';
   el.innerHTML = `
     <div class="tool-row">
-      <div class="kopf"><span>Installierter Stand</span><span class="status" style="color:var(--text-faint)">${escapeHtml((s && s.version) || '')}</span></div>
-      <div class="zeile">${s && s.baustand ? 'Paket vom ' + fmtDateTime(s.baustand) : ''}</div>
-      <div class="zeile">${s && s.letzteUpdatePruefung ? 'Zuletzt geprüft: ' + fmtDateTime(s.letzteUpdatePruefung) : 'Noch nie auf Aktualisierungen geprüft'}</div>
+      <div class="kopf"><span>${t('Installed version')}</span><span class="status" style="color:var(--text-faint)">${escapeHtml((s && s.version) || '')}</span></div>
+      <div class="zeile">${s && s.baustand ? t('Package of {time}', { time: fmtDateTime(s.baustand) }) : ''}</div>
+      <div class="zeile">${s && s.letzteUpdatePruefung ? t('Last checked: {time}', { time: fmtDateTime(s.letzteUpdatePruefung) }) : t('Never checked for updates')}</div>
     </div>`;
 }
 
@@ -2945,7 +2955,7 @@ document.getElementById('btn-update-url').addEventListener('click', async () => 
   try {
     await api('/settings', { method: 'PUT', body: JSON.stringify({ updatePruefUrl: document.getElementById('update-url').value.trim() }) });
     erg.className = 'ok';
-    erg.textContent = 'Prüf-Adresse gespeichert.';
+    erg.textContent = t('Check URL saved.');
     markiereSettingsGespeichert();
   } catch (err) { erg.className = 'error'; erg.textContent = err.message; }
 });
@@ -2953,20 +2963,20 @@ document.getElementById('btn-update-url').addEventListener('click', async () => 
 document.getElementById('btn-update-pruefen').addEventListener('click', async () => {
   const erg = document.getElementById('update-ergebnis');
   erg.className = '';
-  erg.textContent = 'Wird geprüft …';
+  erg.textContent = t('Checking …');
   try {
     const r = await api('/update/pruefen', { method: 'POST' });
     if (!r.ok) { erg.className = 'error'; erg.textContent = r.meldung; return; }
     markiereAktualisierung(r.aktualisierungVerfuegbar, r.verfuegbareVersion);
     if (r.aktualisierungVerfuegbar) {
       erg.className = 'ok';
-      erg.innerHTML = `Neue Fassung <strong>${escapeHtml(r.verfuegbareVersion)}</strong> verfügbar (installiert: ${escapeHtml(r.aktuelleVersion)}).`
+      erg.innerHTML = t('New version <strong>{v}</strong> available (installed: {installed}).', { v: escapeHtml(r.verfuegbareVersion), installed: escapeHtml(r.aktuelleVersion) })
         + (r.hinweis ? `<br>${escapeHtml(r.hinweis)}` : '')
-        + (r.download ? `<br><a href="${escapeHtml(r.download)}" target="_blank" rel="noopener">Zum Download</a>` : '')
-        + '<br><span style="color:var(--text-faint)">Vor dem Einspielen die Konfiguration exportieren — sie lässt sich danach wieder importieren.</span>';
+        + (r.download ? `<br><a href="${escapeHtml(r.download)}" target="_blank" rel="noopener">${t('Go to download')}</a>` : '')
+        + `<br><span style="color:var(--text-faint)">${t('Export the configuration before installing — it can be imported again afterwards.')}</span>`;
     } else {
       erg.className = 'ok';
-      erg.textContent = `Der installierte Stand ${r.aktuelleVersion} ist aktuell.`;
+      erg.textContent = t('The installed version {v} is up to date.', { v: r.aktuelleVersion });
     }
     const s = await api('/settings');
     ladeUpdateStand(s);
@@ -2974,12 +2984,12 @@ document.getElementById('btn-update-pruefen').addEventListener('click', async ()
   } catch (err) { erg.className = 'error'; erg.textContent = err.message; }
 });
 
-// ---------- Erscheinungsbild ----------
+// ---------- Appearance ----------
 
-let logoZwischenspeicher = null; // null = unverändert, '' = entfernen
+let logoZwischenspeicher = null; // null = unchanged, '' = remove
 
 function wendeErscheinungsbildAn(e) {
-  // Akzentfarbe global setzen
+  // Set the accent colour globally
   if (e.akzentFarbe) {
     document.documentElement.style.setProperty('--accent', e.akzentFarbe);
     document.documentElement.style.setProperty('--accent-dim', e.akzentFarbe + '26');
@@ -2988,7 +2998,7 @@ function wendeErscheinungsbildAn(e) {
     document.documentElement.style.removeProperty('--accent-dim');
   }
 
-  // Logo in der Kopfzeile
+  // Logo in the header
   const marke = document.querySelector('.brand-mark');
   if (marke) {
     marke.classList.toggle('hat-logo', Boolean(e.logoDatenUrl));
@@ -3002,7 +3012,7 @@ function wendeErscheinungsbildAn(e) {
     }
   }
 
-  // Eigener Anzeigename ersetzt den Projektnamen in der Kopfzeile
+  // A custom display name replaces the project name in the header
   if (e.anzeigeName) {
     const name = document.getElementById('brand-name');
     const sub = document.getElementById('brand-sub');
@@ -3048,7 +3058,7 @@ document.getElementById('marke-farbe').addEventListener('input', (ev) => {
   aktualisiereMarkenVorschau();
 });
 
-// ---------- Benachrichtigung bei Störung ----------
+// ---------- Notification on failures ----------
 
 async function ladeBenachrichtigung() {
   let b;
@@ -3084,7 +3094,7 @@ function sammleBenachrichtigungsFelder() {
     smtpPort: Number(document.getElementById('benachr-smtpPort').value) || 587,
     smtpSicher: document.getElementById('benachr-smtpSicher').checked,
     smtpBenutzer: document.getElementById('benachr-smtpBenutzer').value.trim(),
-    smtpPasswort: document.getElementById('benachr-smtpPasswort').value, // leer = unverändert
+    smtpPasswort: document.getElementById('benachr-smtpPasswort').value, // empty = unchanged
     von: document.getElementById('benachr-von').value.trim(),
     an: document.getElementById('benachr-an').value.trim(),
     webhookAktiv: document.getElementById('benachr-webhook-aktiv').checked,
@@ -3097,8 +3107,8 @@ document.getElementById('btn-save-benachrichtigung').addEventListener('click', a
   try {
     await api('/benachrichtigung', { method: 'PUT', body: JSON.stringify(sammleBenachrichtigungsFelder()) });
     resultEl.className = 'ok';
-    resultEl.textContent = t('Gespeichert.');
-    showToast('Benachrichtigung gespeichert', 'success');
+    resultEl.textContent = t('Saved.');
+    showToast(t('Notification settings saved'), 'success');
     ladeBenachrichtigung();
     markiereSettingsGespeichert();
   } catch (err) {
@@ -3110,17 +3120,17 @@ document.getElementById('btn-save-benachrichtigung').addEventListener('click', a
 document.getElementById('btn-test-benachrichtigung').addEventListener('click', async () => {
   const resultEl = document.getElementById('benachrichtigung-ergebnis');
   resultEl.className = '';
-  resultEl.textContent = t('Sende Testbenachrichtigung …');
+  resultEl.textContent = t('Sending test notification …');
   try {
-    // Erst speichern, damit der Test die gerade eingetragenen Werte nutzt
+    // Save first so that the test uses the values just entered
     await api('/benachrichtigung', { method: 'PUT', body: JSON.stringify(sammleBenachrichtigungsFelder()) });
     const r = await api('/benachrichtigung/test', { method: 'POST' });
     const teile = [];
-    if (r.email) teile.push('E-Mail: ' + (r.email.ok ? t('gesendet') : t('fehlgeschlagen') + ' — ' + r.email.fehler));
-    if (r.webhook) teile.push('Webhook: ' + (r.webhook.ok ? t('gesendet') : t('fehlgeschlagen') + ' — ' + r.webhook.fehler));
+    if (r.email) teile.push(t('E-mail') + ': ' + (r.email.ok ? t('sent') : t('failed') + ' — ' + r.email.fehler));
+    if (r.webhook) teile.push('Webhook: ' + (r.webhook.ok ? t('sent') : t('failed') + ' — ' + r.webhook.fehler));
     const alleOk = Object.values(r).every((x) => x.ok);
     resultEl.className = alleOk ? 'ok' : 'error';
-    resultEl.textContent = teile.join(' · ') || t('Kein Kanal aktiviert.');
+    resultEl.textContent = teile.join(' · ') || t('No channel enabled.');
     ladeBenachrichtigung();
     markiereSettingsGespeichert();
   } catch (err) {
@@ -3135,7 +3145,7 @@ document.getElementById('marke-logo-datei').addEventListener('change', (ev) => {
   if (!datei) return;
   if (datei.size > 300 * 1024) {
     erg.className = 'error';
-    erg.textContent = `Die Datei ist ${fmtBytes(datei.size)} groß — bitte höchstens etwa 300 KB.`;
+    erg.textContent = t('The file is {size} — please use at most about 300 KB.', { size: fmtBytes(datei.size) });
     ev.target.value = '';
     return;
   }
@@ -3146,7 +3156,7 @@ document.getElementById('marke-logo-datei').addEventListener('change', (ev) => {
     logo.classList.add('hat-bild');
     logo.innerHTML = `<img src="${logoZwischenspeicher}" alt="">`;
     erg.className = '';
-    erg.textContent = 'Logo geladen — noch nicht gespeichert.';
+    erg.textContent = t('Logo loaded — not saved yet.');
   };
   leser.readAsDataURL(datei);
 });
@@ -3161,8 +3171,8 @@ document.getElementById('btn-marke-speichern').addEventListener('click', async (
   try {
     const e = await api('/erscheinungsbild', { method: 'PUT', body: JSON.stringify(nutzlast) });
     erg.className = 'ok';
-    erg.textContent = 'Erscheinungsbild übernommen.';
-    showToast('Erscheinungsbild gespeichert', 'success');
+    erg.textContent = t('Appearance applied.');
+    showToast(t('Appearance saved'), 'success');
     wendeErscheinungsbildAn(e);
     await ladeErscheinungsbild();
     markiereSettingsGespeichert();
@@ -3170,19 +3180,19 @@ document.getElementById('btn-marke-speichern').addEventListener('click', async (
 });
 
 document.getElementById('btn-marke-zuruecksetzen').addEventListener('click', async () => {
-  askConfirm('Logo, Farbe und Anzeigename werden entfernt. Die Anwendung erscheint danach wieder im Standardbild.',
-    'Zurücksetzen', async () => {
+  askConfirm(t('Logo, colour and display name will be removed. The application then appears in its default look again.'),
+    t('Reset'), async () => {
       const e = await api('/erscheinungsbild', { method: 'PUT', body: JSON.stringify({ logoDatenUrl: '', akzentFarbe: '', anzeigeName: '' }) });
       wendeErscheinungsbildAn(e);
       await ladeErscheinungsbild();
-      showToast('Zurückgesetzt', 'info');
+      showToast(t('Reset done'), 'info');
       markiereSettingsGespeichert();
     });
 });
 
 ladeErscheinungsbild();
 
-// ---------- Paket einspielen ----------
+// ---------- Install package ----------
 
 const updateDatei = document.getElementById('update-datei');
 const btnEinspielen = document.getElementById('btn-update-einspielen');
@@ -3193,7 +3203,7 @@ updateDatei.addEventListener('change', () => {
   btnEinspielen.disabled = !d;
   if (d) {
     erg.className = '';
-    erg.textContent = `Gewählt: ${d.name} (${fmtBytes(d.size)})`;
+    erg.textContent = t('Selected: {name} ({size})', { name: d.name, size: fmtBytes(d.size) });
   }
 });
 
@@ -3202,10 +3212,8 @@ btnEinspielen.addEventListener('click', () => {
   if (!datei) return;
 
   askConfirm(
-    `„${datei.name}" wird eingespielt und die Anwendung anschließend neu gestartet. `
-    + 'Konfiguration, Protokolle und Benutzer bleiben erhalten. '
-    + 'Laufende Übertragungen werden unterbrochen.',
-    'Einspielen', () => {
+    t('“{file}” will be installed and the application restarted afterwards. Configuration, logs and users are kept. Running transfers are interrupted.', { file: datei.name }),
+    t('Install'), () => {
       const fortschritt = document.getElementById('update-fortschritt');
       const balken = fortschritt.querySelector('span');
       const text = document.getElementById('update-fortschritt-text');
@@ -3223,29 +3231,29 @@ btnEinspielen.addEventListener('click', () => {
         if (!e.lengthComputable) return;
         const anteil = Math.round((e.loaded / e.total) * 100);
         balken.style.width = anteil + '%';
-        text.textContent = anteil < 100 ? `${anteil} % übertragen` : 'wird eingespielt …';
+        text.textContent = anteil < 100 ? t('{n} % uploaded', { n: anteil }) : t('installing …');
       });
 
       anfrage.addEventListener('load', () => {
         let antwort = {};
-        try { antwort = JSON.parse(anfrage.responseText); } catch { /* egal */ }
+        try { antwort = JSON.parse(anfrage.responseText); } catch { /* ignore */ }
         if (anfrage.status !== 200) {
           fortschritt.classList.add('hidden');
           btnEinspielen.disabled = false;
           erg.className = 'error';
-          erg.textContent = antwort.error || 'Einspielen fehlgeschlagen.';
+          erg.textContent = antwort.error || t('Installing failed.');
           return;
         }
         balken.style.width = '100%';
-        text.textContent = 'Anwendung startet neu …';
+        text.textContent = t('Application is restarting …');
         erg.className = 'ok';
-        erg.innerHTML = `Eingespielt${antwort.neueVersion ? ` — neue Fassung <strong>${escapeHtml(antwort.neueVersion)}</strong>` : ''}`
-          + ` (${antwort.ersetzteDateien} Dateien, Sicherung: ${escapeHtml(antwort.sicherung || '')}).`
+        erg.innerHTML = (antwort.neueVersion ? t('Installed — new version <strong>{v}</strong>', { v: escapeHtml(antwort.neueVersion) }) : t('Installed'))
+          + ' ' + t('({n} files, backup: {backup}).', { n: antwort.ersetzteDateien, backup: escapeHtml(antwort.sicherung || '') })
           + `<br>${escapeHtml(antwort.hinweis || '')}`;
         text.textContent = antwort.neustartVerhalten === 'beenden'
-          ? 'Anwendung beendet — warte auf Neustart durch Windows …'
-          : 'Anwendung startet neu …';
-        // In beiden Fällen zurückkehren, sobald sie wieder antwortet
+          ? t('Application stopped — waiting for the restart by the task or service …')
+          : t('Application is restarting …');
+        // In both cases return as soon as it responds again
         warteAufNeustart(antwort.neustartVerhalten === 'beenden' ? 80 : 40);
       });
 
@@ -3253,14 +3261,14 @@ btnEinspielen.addEventListener('click', () => {
         fortschritt.classList.add('hidden');
         btnEinspielen.disabled = false;
         erg.className = 'error';
-        erg.textContent = 'Verbindung beim Hochladen abgebrochen.';
+        erg.textContent = t('The connection was interrupted during the upload.');
       });
 
       anfrage.send(datei);
-    }, 'Paket einspielen?');
+    }, t('Install package?'));
 });
 
-// Nach dem Neustart selbstständig zurückkehren
+// Return automatically after the restart
 function warteAufNeustart(maxVersuche = 40) {
   let versuche = 0;
   const pruefen = () => {
@@ -3272,7 +3280,7 @@ function warteAufNeustart(maxVersuche = 40) {
   const weiter = () => {
     if (versuche > maxVersuche) {
       document.getElementById('update-fortschritt-text').textContent =
-        'Anwendung meldet sich nicht — bitte start.bat bzw. die geplante Aufgabe prüfen.';
+        t('The application does not respond — please check start.bat or the scheduled task.');
       return;
     }
     setTimeout(pruefen, 1500);
@@ -3280,7 +3288,7 @@ function warteAufNeustart(maxVersuche = 40) {
   setTimeout(pruefen, 3000);
 }
 
-// ---------- Verhalten nach dem Einspielen ----------
+// ---------- Behaviour after installing ----------
 
 async function ladeBetriebsart() {
   const hinweis = document.getElementById('betriebsart-hinweis');
@@ -3290,20 +3298,20 @@ async function ladeBetriebsart() {
 
   document.getElementById('neustart-verhalten').value = art.eingestellt;
 
-  const beschreibung = {
-    startbat: 'einem Konsolenfenster (vermutlich start.bat)',
-    aufgabe: 'ohne Konsolenfenster — vermutlich als geplante Aufgabe oder als Dienst',
-    konsole: 'einem Terminal',
-    hintergrund: 'im Hintergrund ohne Terminal',
-  }[art.vermutung] || 'unbekannter Umgebung';
+  const beschreibung = t({
+    startbat: 'a console window (probably start.bat)',
+    aufgabe: 'without a console window — probably as a scheduled task or service',
+    konsole: 'a terminal',
+    hintergrund: 'the background without a terminal',
+  }[art.vermutung] || 'an unknown environment');
 
   hinweis.classList.remove('hidden');
   hinweis.classList.toggle('passt', art.passt);
   hinweis.innerHTML = art.passt
-    ? `Die Anwendung läuft in <strong>${escapeHtml(beschreibung)}</strong>. Die gewählte Einstellung passt dazu.`
-    : `Die Anwendung läuft in <strong>${escapeHtml(beschreibung)}</strong>. `
-      + `Empfohlen wäre <strong>${art.empfehlung === 'beenden' ? 'nur beenden' : 'selbst neu starten'}</strong> — `
-      + 'sonst könnte die Anwendung nach dem Einspielen nicht wieder hochkommen.';
+    ? t('The application runs in <strong>{env}</strong>. The selected setting matches.', { env: escapeHtml(beschreibung) })
+    : t('The application runs in <strong>{env}</strong>. Recommended would be <strong>{rec}</strong> — otherwise the application might not come back up after installing.', {
+      env: escapeHtml(beschreibung), rec: art.empfehlung === 'beenden' ? t('only shut down') : t('restart itself'),
+    });
 }
 
 document.getElementById('btn-neustart-verhalten').addEventListener('click', async () => {
@@ -3314,18 +3322,18 @@ document.getElementById('btn-neustart-verhalten').addEventListener('click', asyn
       body: JSON.stringify({ neustartVerhalten: document.getElementById('neustart-verhalten').value }),
     });
     erg.className = 'ok';
-    erg.textContent = 'Gespeichert.';
+    erg.textContent = t('Saved.');
     await ladeBetriebsart();
     markiereSettingsGespeichert();
   } catch (err) { erg.className = 'error'; erg.textContent = err.message; }
 });
 
-// ---------- Beispielnamen für die Teildokumente ----------
+// ---------- Example names for the parts ----------
 
 document.getElementById('btn-namen-vorschau').addEventListener('click', async () => {
   const el = document.getElementById('namen-vorschau');
   el.className = '';
-  el.textContent = 'Erzeuge …';
+  el.textContent = t('Generating …');
   try {
     const r = await api('/namen-vorschau', {
       method: 'POST',
@@ -3337,7 +3345,7 @@ document.getElementById('btn-namen-vorschau').addEventListener('click', async ()
     });
     el.className = 'ok';
     el.innerHTML = r.namen.map((n, i) => `${i + 1}. <code>${escapeHtml(n)}</code>`).join(' &nbsp; ')
-      + ' <span style="color:var(--text-faint)">(drittes Beispiel ohne erkannten QR-Code)</span>';
+      + ` <span style="color:var(--text-faint)">${t('(third example without a detected QR code)')}</span>`;
   } catch (err) {
     el.className = 'error';
     el.textContent = err.message;

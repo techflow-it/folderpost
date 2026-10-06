@@ -1,15 +1,15 @@
-// Decoder für CCITT-Gruppe-4-Bilder (CCITTFaxDecode, K < 0).
-// Das ist die übliche Kompression eingescannter Schwarzweiß-Seiten.
+// Decoder for CCITT Group 4 images (CCITTFaxDecode, K < 0).
+// This is the usual compression for scanned black-and-white pages.
 //
-// Verfahren: zweidimensionale Kodierung, jede Zeile wird als Abfolge von
-// Wechselstellen relativ zur vorherigen Zeile beschrieben.
+// Method: two-dimensional coding; every line is described as a sequence of
+// changing elements relative to the previous line.
 
-// ---------- Bitweises Lesen ----------
+// ---------- Bitwise reading ----------
 
 class BitStrom {
   constructor(daten) {
     this.daten = daten;
-    this.pos = 0; // Bitposition
+    this.pos = 0; // bit position
   }
 
   bit() {
@@ -35,8 +35,8 @@ class BitStrom {
   amEnde() { return this.pos >= this.daten.length * 8; }
 }
 
-// ---------- Lauflängen-Tabellen (T.4) ----------
-// Aufbau: [Bitmuster als Zeichenkette] -> Lauflänge
+// ---------- Run-length tables (T.4) ----------
+// Layout: [bit pattern as string] -> run length
 
 const WEISS = {
   '00110101': 0, '000111': 1, '0111': 2, '1000': 3, '1011': 4, '1100': 5, '1110': 6, '1111': 7,
@@ -50,7 +50,7 @@ const WEISS = {
   '01010100': 51, '01010101': 52, '00100100': 53, '00100101': 54, '01011000': 55, '01011001': 56,
   '01011010': 57, '01011011': 58, '01001010': 59, '01001011': 60, '00110010': 61, '00110011': 62,
   '00110100': 63,
-  // Vielfache von 64
+  // Multiples of 64
   '11011': 64, '10010': 128, '010111': 192, '0110111': 256, '00110110': 320, '00110111': 384,
   '01100100': 448, '01100101': 512, '01101000': 576, '01100111': 640, '011001100': 704,
   '011001101': 768, '011010010': 832, '011010011': 896, '011010100': 960, '011010101': 1024,
@@ -81,7 +81,7 @@ const SCHWARZ = {
   '0000001011011': 1600, '0000001100100': 1664, '0000001100101': 1728,
 };
 
-// Erweiterungscodes, für beide Farben gleich
+// Make-up codes, identical for both colours
 const ERWEITERT = {
   '00000001000': 1792, '00000001100': 1856, '00000001101': 1920, '000000010010': 1984,
   '000000010011': 2048, '000000010100': 2112, '000000010101': 2176, '000000010110': 2240,
@@ -92,7 +92,7 @@ const ERWEITERT = {
 function leseLauf(strom, weiss) {
   const tabelle = weiss ? WEISS : SCHWARZ;
   let gesamt = 0;
-  // Vielfache von 64 können mehrfach hintereinander stehen
+  // Multiples of 64 may appear several times in a row
   for (let runde = 0; runde < 64; runde += 1) {
     let muster = '';
     let gefunden = null;
@@ -105,21 +105,21 @@ function leseLauf(strom, weiss) {
     }
     if (gefunden === null) return null;
     gesamt += gefunden;
-    if (gefunden < 64) return gesamt; // Abschlusscode erreicht
+    if (gefunden < 64) return gesamt; // terminating code reached
   }
   return gesamt;
 }
 
 /**
- * Dekodiert Gruppe-4-Daten zu einem Graustufenbild.
- * @returns { breite, hoehe, grau } oder null
+ * Decodes Group 4 data into a greyscale image.
+ * @returns { breite, hoehe, grau } or null
  */
 function dekodiereG4(daten, breite, hoehe, optionen = {}) {
   const schwarzIst1 = Boolean(optionen.blackIs1);
   const strom = new BitStrom(daten);
   const grau = new Uint8Array(breite * hoehe).fill(255);
 
-  // Wechselstellen der Bezugszeile; anfangs eine gedachte weiße Zeile
+  // Changing elements of the reference line; initially an imaginary white line
   let bezug = [breite, breite];
   let zeile = 0;
 
@@ -132,16 +132,16 @@ function dekodiereG4(daten, breite, hoehe, optionen = {}) {
     while (a0 < breite && schutz < breite * 4) {
       schutz += 1;
 
-      // b1: erste Wechselstelle der Bezugszeile rechts von a0 mit passender Farbe
+      // b1: first changing element of the reference line to the right of a0 with the matching colour
       let b1 = breite;
       let i = 0;
       while (i < bezug.length && bezug[i] <= a0) i += 1;
-      // Farbwechsel-Parität: gerade Indizes wechseln nach schwarz
+      // Colour change parity: even indices change to black
       while (i < bezug.length && ((i % 2 === 0) !== farbeWeiss)) i += 1;
       b1 = i < bezug.length ? bezug[i] : breite;
       const b2 = i + 1 < bezug.length ? bezug[i + 1] : breite;
 
-      // Modus einlesen
+      // Read the mode
       let modus = null;
       let muster = '';
       for (let k = 0; k < 7; k += 1) {
@@ -162,13 +162,13 @@ function dekodiereG4(daten, breite, hoehe, optionen = {}) {
       if (modus === null || modus === 'ende') { a0 = breite; break; }
 
       if (modus === 'P') {
-        // Durchgangsmodus: bis b2 in aktueller Farbe weiter
+        // Pass mode: continue in the current colour up to b2
         a0 = b2;
         continue;
       }
 
       if (modus === 'H') {
-        // Horizontalmodus: zwei Lauflängen
+        // Horizontal mode: two run lengths
         const start = a0 < 0 ? 0 : a0;
         const lauf1 = leseLauf(strom, farbeWeiss);
         const lauf2 = leseLauf(strom, !farbeWeiss);
@@ -180,7 +180,7 @@ function dekodiereG4(daten, breite, hoehe, optionen = {}) {
         continue;
       }
 
-      // Vertikalmodi
+      // Vertical modes
       const versatz = { V0: 0, VR1: 1, VR2: 2, VR3: 3, VL1: -1, VL2: -2, VL3: -3 }[modus];
       const a1 = Math.max(0, Math.min(breite, b1 + versatz));
       aktuell.push(a1);
@@ -188,7 +188,7 @@ function dekodiereG4(daten, breite, hoehe, optionen = {}) {
       farbeWeiss = !farbeWeiss;
     }
 
-    // Zeile aus den Wechselstellen zeichnen
+    // Draw the line from the changing elements
     let x = 0;
     let weiss = true;
     for (let k = 0; k < aktuell.length && x < breite; k += 1) {
@@ -209,7 +209,7 @@ function dekodiereG4(daten, breite, hoehe, optionen = {}) {
 
   if (zeile === 0) return null;
 
-  // BlackIs1: Bedeutung der Bits umgekehrt
+  // BlackIs1: meaning of the bits is inverted
   if (schwarzIst1) {
     for (let i = 0; i < grau.length; i += 1) grau[i] = 255 - grau[i];
   }

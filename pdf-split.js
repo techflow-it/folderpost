@@ -1,27 +1,28 @@
-// Teilt einen Stapelscan an QR-Codes in Einzeldokumente.
+// Splits a batch scan into individual documents at QR codes.
 //
-// Vorgehen: Die eingebetteten Seitenbilder werden der Reihe nach aus dem PDF
-// gelesen und auf QR-Codes geprüft. Jede Seite mit Code beginnt ein neues
-// Dokument; Seiten ohne Code gehören zum vorherigen. Aus den Seitenbildern
-// entsteht anschließend je Dokument eine neue PDF-Datei.
+// Method: the embedded page images are read from the PDF one after another
+// and checked for QR codes. Every page with a code starts a new document;
+// pages without a code belong to the previous one. A new PDF file is then
+// built from the page images of each document.
 //
-// Grenze: funktioniert bei JPEG-komprimierten Scans (der Normalfall bei
-// Bürogeräten). CCITT- oder JBIG2-komprimierte Seiten lassen sich damit
-// nicht auslesen.
+// Limits: works for JPEG, CCITT Group 4, uncompressed and Flate-compressed
+// scans (the normal case for office devices). JBIG2-, JPEG 2000- or CCITT
+// Group 3-compressed pages cannot be read.
 
 const fs = require('fs');
 const zlib = require('zlib');
 const { dekodiereG4 } = require('./ccitt');
+const { L } = require('./i18n');
 
-// ---------- Seitenbilder aus dem PDF holen ----------
+// ---------- Getting the page images from the PDF ----------
 
-/** Liest Breite und Höhe aus dem JPEG-Kopf (SOF-Marke). */
+/** Reads width and height from the JPEG header (SOF marker). */
 function jpegMasse(puffer) {
   let pos = 2;
   while (pos < puffer.length - 9) {
     if (puffer[pos] !== 0xFF) { pos += 1; continue; }
     const marke = puffer[pos + 1];
-    // SOF0..SOF3 und SOF5..SOF15 enthalten die Abmessungen
+    // SOF0..SOF3 and SOF5..SOF15 contain the dimensions
     if (marke >= 0xC0 && marke <= 0xCF && marke !== 0xC4 && marke !== 0xC8 && marke !== 0xCC) {
       return { hoehe: puffer.readUInt16BE(pos + 5), breite: puffer.readUInt16BE(pos + 7) };
     }
@@ -32,16 +33,16 @@ function jpegMasse(puffer) {
   return null;
 }
 
-/** Zahl aus dem Bildwörterbuch lesen. */
+/** Reads a number from the image dictionary. */
 function zahl(kopf, name, standard = null) {
   const m = new RegExp('/' + name + '\\s+(-?\\d+)').exec(kopf);
   return m ? Number(m[1]) : standard;
 }
 
 /**
- * Liefert alle eingebetteten Seitenbilder in Dokumentreihenfolge.
- * Unterstützt JPEG (DCTDecode), Schwarzweiß-Scans (CCITTFaxDecode Gruppe 4)
- * und unkomprimierte bzw. Flate-komprimierte Bilder.
+ * Returns all embedded page images in document order.
+ * Supports JPEG (DCTDecode), black-and-white scans (CCITTFaxDecode Group 4)
+ * and uncompressed or Flate-compressed images.
  */
 function seitenBilder(pdfPfad) {
   let daten;
@@ -59,9 +60,9 @@ function seitenBilder(pdfPfad) {
     const streamIdx = daten.indexOf(Buffer.from('stream', 'latin1'), idx);
     if (streamIdx === -1) continue;
 
-    // Wörterbuch exakt abgrenzen: vom Objektbeginn bis zum Datenstrom.
-    // Ein Fenster fester Größe würde Werte des Nachbarbilds mitlesen; das
-    // letzte "<<" wäre das verschachtelte DecodeParms-Wörterbuch.
+    // Delimit the dictionary exactly: from the start of the object to the stream.
+    // A fixed-size window would also read values of the neighbouring image; the
+    // last "<<" would be the nested DecodeParms dictionary.
     const vorlauf = daten.slice(Math.max(0, streamIdx - 4000), streamIdx).toString('latin1');
     const objStart = vorlauf.lastIndexOf('obj');
     const kopf = objStart === -1 ? vorlauf : vorlauf.slice(objStart);
@@ -88,9 +89,9 @@ function seitenBilder(pdfPfad) {
       continue;
     }
 
-    // Länge des Datenstroms bestimmen. Achtung: /Length kann ein indirekter
-    // Verweis sein ("/Length 6 0 R") — dann steht dort nicht die Länge,
-    // sondern eine Objektnummer. In dem Fall bis "endstream" lesen.
+    // Determine the length of the stream. Note: /Length can be an indirect
+    // reference ("/Length 6 0 R") — then it holds an object number, not the
+    // length. In that case read up to "endstream".
     const laengeIndirekt = /\/Length\s+\d+\s+\d+\s+R/.test(kopf);
     const laengeAngabe = laengeIndirekt ? null : zahl(kopf, 'Length');
     let ende = laengeAngabe ? start + laengeAngabe : -1;
@@ -101,10 +102,10 @@ function seitenBilder(pdfPfad) {
     }
     const roh = daten.slice(start, ende);
 
-    // --- Schwarzweiß-Scan (CCITT Gruppe 4) ---
+    // --- Black-and-white scan (CCITT Group 4) ---
     if (/\/CCITTFaxDecode/.test(kopf)) {
       const k = zahl(kopf, 'K', 0);
-      if (k >= 0) continue; // Gruppe 3 wird nicht unterstützt
+      if (k >= 0) continue; // Group 3 is not supported
       const schwarzIst1 = /\/BlackIs1\s+true/.test(kopf);
       const spalten = zahl(kopf, 'Columns', 1728) || breite;
       let bild = null;
@@ -114,13 +115,13 @@ function seitenBilder(pdfPfad) {
       continue;
     }
 
-    // --- Unkomprimiert oder Flate ---
-    if (/\/JBIG2Decode|\/JPXDecode/.test(kopf)) continue; // nicht unterstützt
+    // --- Uncompressed or Flate ---
+    if (/\/JBIG2Decode|\/JPXDecode/.test(kopf)) continue; // not supported
     let roh2 = roh;
     if (/\/FlateDecode/.test(kopf)) {
       try { roh2 = zlib.inflateSync(roh); } catch { continue; }
     } else if (/\/Filter/.test(kopf)) {
-      continue; // andere Kompression
+      continue; // other compression
     }
 
     const grauDaten = graustufenAusRoh(roh2, breite, hoehe, bpc, grauRaum);
@@ -130,7 +131,7 @@ function seitenBilder(pdfPfad) {
   return bilder;
 }
 
-/** Wandelt Rohbilddaten in ein Graustufenbild um. */
+/** Converts raw image data into a greyscale image. */
 function graustufenAusRoh(roh, breite, hoehe, bpc, grauRaum) {
   const grau = new Uint8Array(breite * hoehe);
   if (bpc === 1) {
@@ -159,24 +160,24 @@ function graustufenAusRoh(roh, breite, hoehe, bpc, grauRaum) {
   return null;
 }
 
-// ---------- Neues PDF aus Seitenbildern bauen ----------
+// ---------- Building a new PDF from page images ----------
 
 function pdfAusBildern(bilder, dpi = 150) {
   const objekte = [];
   const hinzu = (inhalt) => { objekte.push(inhalt); return objekte.length; };
 
-  // 1 = Katalog, 2 = Seitenbaum — Nummern vorab reservieren
+  // 1 = catalog, 2 = page tree — reserve the numbers in advance
   const katalogNr = 1;
   const baumNr = 2;
   objekte.push(null, null);
 
   const seitenNummern = [];
   bilder.forEach((bild) => {
-    // Punkte = Pixel / dpi * 72
+    // points = pixels / dpi * 72
     const breitePt = Math.round((bild.breite / dpi) * 72);
     const hoehePt = Math.round((bild.hoehe / dpi) * 72);
 
-    // JPEG wird unverändert eingebettet, Graustufen komprimiert abgelegt
+    // JPEG is embedded unchanged, greyscale is stored compressed
     let bildNr;
     if (bild.art === 'jpeg') {
       bildNr = hinzu(Buffer.concat([
@@ -211,7 +212,7 @@ function pdfAusBildern(bilder, dpi = 150) {
   objekte[baumNr - 1] = Buffer.from(
     `<</Type/Pages/Kids[${seitenNummern.map((n) => `${n} 0 R`).join(' ')}]/Count ${seitenNummern.length}>>`, 'latin1');
 
-  // Zusammensetzen mit Querverweistabelle
+  // Assemble with a cross-reference table
   const teile = [Buffer.from('%PDF-1.4\n', 'latin1')];
   let laenge = teile[0].length;
   const versaetze = [];
@@ -236,52 +237,50 @@ function pdfAusBildern(bilder, dpi = 150) {
   return Buffer.concat(teile);
 }
 
-// ---------- Aufteilen ----------
+// ---------- Splitting ----------
 
 /**
- * Teilt das PDF an Seiten mit QR-Code auf.
- * @param leseQrAusPuffer  Funktion (bild) → erkannter Wert oder null.
- *   bild.art ist 'jpeg' (bild.jpeg = Puffer) oder 'grau'
+ * Splits the PDF at pages with a QR code.
+ * @param leseQrAusPuffer  function (bild) → detected value or null.
+ *   bild.art is 'jpeg' (bild.jpeg = buffer) or 'grau'
  *   (bild.grauDaten, bild.breite, bild.hoehe)
  * @returns { ok, dokumente: [{ qrWert, seiten, seitenNummern, pdf }], seitenGesamt, meldung }
  */
 function teileNachQr(pdfPfad, leseQrAusPuffer, optionen = {}) {
   const bilder = seitenBilder(pdfPfad);
   if (bilder.length === 0) {
-    // Genauer benennen, woran es liegt
+    // Name the cause more precisely
     let hinweis = '';
     try {
       const text = fs.readFileSync(pdfPfad).toString('latin1');
       if (/\/JBIG2Decode/.test(text)) {
-        hinweis = ' Das PDF verwendet JBIG2-Kompression, die nicht ausgewertet werden kann. '
-          + 'Abhilfe: den Scanner auf JPEG, TIFF/CCITT oder unkomprimiert umstellen.';
+        hinweis = ' ' + L('The PDF uses JBIG2 compression, which cannot be evaluated. Remedy: switch the scanner to JPEG, TIFF/CCITT or uncompressed.');
       } else if (/\/JPXDecode/.test(text)) {
-        hinweis = ' Das PDF verwendet JPEG-2000, das nicht ausgewertet werden kann.';
+        hinweis = ' ' + L('The PDF uses JPEG 2000, which cannot be evaluated.');
       } else if (/\/CCITTFaxDecode/.test(text) && /\/K\s+0/.test(text)) {
-        hinweis = ' Das PDF verwendet CCITT Gruppe 3; unterstützt wird Gruppe 4.';
+        hinweis = ' ' + L('The PDF uses CCITT Group 3; Group 4 is supported.');
       } else if (!/\/Subtype\s*\/Image/.test(text)) {
-        hinweis = ' Das PDF enthält keine Seitenbilder — vermutlich ein digital erzeugtes '
-          + 'PDF statt eines Scans. Das Aufteilen an QR-Codes ist dafür nicht vorgesehen.';
+        hinweis = ' ' + L('The PDF contains no page images — probably a digitally created PDF instead of a scan. Splitting at QR codes is not intended for that.');
       }
-    } catch { /* egal */ }
-    return { ok: false, meldung: 'Keine auswertbaren Seitenbilder gefunden.' + hinweis };
+    } catch { /* ignore */ }
+    return { ok: false, meldung: L('No usable page images found.') + hinweis };
   }
 
-  // Der Leser bekommt das Bildobjekt: entweder JPEG-Puffer oder fertige Graustufen
+  // The reader gets the image object: either a JPEG buffer or ready greyscale data
   const codes = bilder.map((b) => {
     try { return leseQrAusPuffer(b) || null; } catch { return null; }
   });
 
-  // Wenn keine einzige Seite einen Code trägt, wäre eine Aufteilung willkürlich
+  // If not a single page carries a code, splitting would be arbitrary
   if (codes.every((c) => !c)) {
-    return { ok: false, meldung: `Auf keiner der ${bilder.length} Seiten wurde ein QR-Code gefunden.`, seitenGesamt: bilder.length };
+    return { ok: false, meldung: L('No QR code was found on any of the {count} pages.', { count: bilder.length }), seitenGesamt: bilder.length };
   }
 
   const dokumente = [];
   let aktuell = null;
   codes.forEach((code, i) => {
     if (code || aktuell === null) {
-      // Neue Trennstelle — oder erste Seite ohne Code (Vorspann)
+      // New split point — or first page without a code (leading pages)
       aktuell = { qrWert: code, seiten: [], seitenNummern: [] };
       dokumente.push(aktuell);
     }
@@ -289,7 +288,7 @@ function teileNachQr(pdfPfad, leseQrAusPuffer, optionen = {}) {
     aktuell.seitenNummern.push(i + 1);
   });
 
-  // Führende Seiten ohne Code können auf Wunsch verworfen werden
+  // Leading pages without a code can be discarded on request
   const ergebnis = dokumente
     .filter((d) => (optionen.vorspannVerwerfen ? Boolean(d.qrWert) : true))
     .map((d) => ({

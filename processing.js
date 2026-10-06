@@ -1,5 +1,5 @@
-// Verarbeitungsschritte, die zwischen "Datei gefunden" und "Senden" greifen.
-// Aktuell: eingescannte PDFs mit QR-Code in eine JSON-Nachricht umwandeln.
+// Processing steps between "file found" and "send".
+// Currently: convert scanned PDFs with a QR code into a JSON message.
 
 const fs = require('fs');
 const os = require('os');
@@ -9,22 +9,23 @@ const { execFile } = require('child_process');
 const { dekodiereJpeg } = require('./jpeg');
 const { leseQr } = require('./qr');
 const { seitenBilder } = require('./pdf-split');
+const { L } = require('./i18n');
 
-// ---------- Werkzeug-Erkennung ----------
+// ---------- Tool detection ----------
 
 const IST_WINDOWS = process.platform === 'win32';
 const EXE = IST_WINDOWS ? '.exe' : '';
 
-// Durchsucht einen Ordner bis zu einer begrenzten Tiefe nach einer Datei.
-// So ist es egal, wie das entpackte Archiv aufgebaut ist (bin, Library\bin,
-// mingw64\bin, mit oder ohne Versionsordner).
+// Searches a folder for a file up to a limited depth.
+// This way it does not matter how the extracted archive is structured (bin, Library\bin,
+// mingw64\bin, with or without a version folder).
 function sucheRekursiv(wurzel, dateiname, maxTiefe = 4) {
   const gefunden = [];
   const lauf = (ordner, tiefe) => {
     if (tiefe > maxTiefe || gefunden.length > 20) return;
     let eintraege;
     try { eintraege = fs.readdirSync(ordner, { withFileTypes: true }); } catch { return; }
-    // Erst Dateien im aktuellen Ordner prüfen
+    // Check the files in the current folder first
     eintraege.forEach((e) => {
       if (e.isFile() && e.name.toLowerCase() === dateiname.toLowerCase()) {
         gefunden.push(path.join(ordner, e.name));
@@ -38,9 +39,9 @@ function sucheRekursiv(wurzel, dateiname, maxTiefe = 4) {
   return gefunden;
 }
 
-// Liest die von einer .exe benoetigten DLL-Namen aus der Datei heraus
-// (einfache Zeichenkettensuche, ausreichend fuer eine Diagnose) und prueft,
-// welche davon neben der .exe fehlen.
+// Reads the DLL names required by an .exe from the file
+// (simple string search, sufficient for a diagnosis) and checks
+// which of them are missing next to the .exe.
 function pruefeBenoetigteDlls(exePfad) {
   const systemDlls = new Set([
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'msvcrt.dll', 'ole32.dll',
@@ -68,12 +69,12 @@ function pruefeBenoetigteDlls(exePfad) {
   return { benoetigt: Array.from(namen), vorhanden, fehlend };
 }
 
-// Liefert alle Pfade, die geprueft werden — fuer die Fehlersuche
+// Returns all paths that are checked — for troubleshooting
 function sammlePfadKandidaten(name, unterordner) {
   const wurzel = path.join(__dirname, 'runtime', unterordner);
   const datei = name + EXE;
 
-  // Bevorzugte, bekannte Ablagen zuerst
+  // Preferred, known locations first
   const kandidaten = [
     path.join(wurzel, 'bin', datei),
     path.join(wurzel, 'Library', 'bin', datei),
@@ -81,7 +82,7 @@ function sammlePfadKandidaten(name, unterordner) {
     path.join(wurzel, datei),
   ];
 
-  // Danach alles, was sich im runtime-Ordner sonst noch findet
+  // Then everything else found in the runtime folder
   sucheRekursiv(wurzel, datei).forEach((p) => {
     if (!kandidaten.includes(p)) kandidaten.push(p);
   });
@@ -103,10 +104,10 @@ function findeWerkzeug(name, unterordner) {
   const treffer = sammlePfadKandidaten(name, unterordner).find((p) => {
     try { return fs.existsSync(p); } catch { return false; }
   });
-  return treffer || name; // sonst aus dem PATH
+  return treffer || name; // otherwise from the PATH
 }
 
-// Startet das Programm und meldet ausfuehrlich zurueck, warum es ggf. scheitert
+// Starts the program and reports in detail why it fails, if it does
 function pruefeWerkzeugDetail(name, unterordner, args, cb) {
   const kandidaten = sammlePfadKandidaten(name, unterordner);
   const gefunden = kandidaten.filter((p) => { try { return fs.existsSync(p); } catch { return false; } });
@@ -114,32 +115,32 @@ function pruefeWerkzeugDetail(name, unterordner, args, cb) {
   const ausPfadVariable = gefunden.length === 0;
 
   execFile(pfad, args, { timeout: 10000 }, (err, stdout, stderr) => {
-    // Exit-Code 1 ist bei --version/-v mancher Werkzeuge normal
+    // Exit code 1 is normal for --version/-v with some tools
     const ok = !err || err.code === 1;
     let grund = null;
     if (!ok) {
       if (err.code === 'ENOENT') {
         grund = ausPfadVariable
-          ? `Programm weder im runtime-Ordner noch über die PATH-Variable gefunden.`
-          : `Datei existiert unter "${pfad}", lässt sich aber nicht starten (ENOENT).`;
+          ? L('Program found neither in the runtime folder nor via the PATH variable.')
+          : L('The file exists at "{path}" but cannot be started (ENOENT).', { path: pfad });
       } else if (String(err.message).includes('0xc0000135') || String(err.message).includes('3221225781')) {
-        grund = `Datei gefunden, aber Start fehlgeschlagen — es fehlen zugehörige DLL-Dateien im selben Ordner. Bitte den kompletten Inhalt des bin-Ordners kopieren, nicht nur die .exe.`;
+        grund = L('File found, but starting it failed — DLL files are missing in the same folder. Please copy the complete contents of the bin folder, not just the .exe.');
       } else {
-        grund = `Start fehlgeschlagen: ${err.message.split('\n')[0]}`;
+        grund = L('Start failed: {error}', { error: err.message.split('\n')[0] });
       }
     }
     const dlls = (!ok && path.isAbsolute(pfad)) ? pruefeBenoetigteDlls(pfad) : null;
     if (dlls && dlls.fehlend.length && !grund) {
-      grund = `Programm gefunden, aber nicht startbar. Fehlende Bibliotheken im selben Ordner: ${dlls.fehlend.slice(0, 8).join(', ')}`;
+      grund = L('Program found but cannot be started. Missing libraries in the same folder: {list}', { list: dlls.fehlend.slice(0, 8).join(', ') });
     } else if (dlls && dlls.fehlend.length && grund) {
-      grund += ` Fehlende Bibliotheken: ${dlls.fehlend.slice(0, 8).join(', ')}`;
+      grund += ' ' + L('Missing libraries: {list}', { list: dlls.fehlend.slice(0, 8).join(', ') });
     }
     cb({
       name,
       ok,
       pfad,
       dlls,
-      quelle: ausPfadVariable ? 'PATH-Variable' : 'Datei gefunden',
+      quelle: ausPfadVariable ? L('PATH variable') : L('File found'),
       gefundeneDateien: gefunden,
       geprueftePfade: kandidaten,
       exitCode: err ? (err.code !== undefined ? String(err.code) : '?') : '0',
@@ -149,12 +150,12 @@ function pruefeWerkzeugDetail(name, unterordner, args, cb) {
   });
 }
 
-// ---------- Bild direkt aus dem PDF ziehen (ohne Poppler) ----------
+// ---------- Extracting the image directly from the PDF (without Poppler) ----------
 
 /**
- * Eingescannte PDFs enthalten die Seite fast immer als fertiges JPEG.
- * Das laesst sich ohne Renderer herausloesen — hilft, wenn Poppler auf
- * dem Zielrechner nicht laeuft. Liefert den Pfad einer .jpg-Datei.
+ * Scanned PDFs almost always contain the page as a ready-made JPEG.
+ * It can be extracted without a renderer — this helps when Poppler does not
+ * run on the target machine. Returns the path of a .jpg file.
  */
 function extrahiereAlleBilder(pdfPfad, zielBasis, maxAnzahl = 12) {
   let daten;
@@ -173,7 +174,7 @@ function extrahiereAlleBilder(pdfPfad, zielBasis, maxAnzahl = 12) {
 
     const kopf = daten.slice(Math.max(0, idx - 600), Math.min(daten.length, idx + 600)).toString('latin1');
     if (!/\/Image/.test(kopf)) continue;
-    if (!/\/DCTDecode/.test(kopf)) continue; // nur JPEG; anderes braeuchte einen Decoder
+    if (!/\/DCTDecode/.test(kopf)) continue; // JPEG only; anything else would need a decoder
 
     const streamIdx = daten.indexOf(Buffer.from('stream', 'latin1'), idx);
     if (streamIdx === -1) continue;
@@ -181,19 +182,19 @@ function extrahiereAlleBilder(pdfPfad, zielBasis, maxAnzahl = 12) {
     if (daten[start] === 0x0D) start += 1;
     if (daten[start] === 0x0A) start += 1;
 
-    // JPEG beginnt mit FF D8 und endet mit FF D9
+    // JPEG starts with FF D8 and ends with FF D9
     if (!(daten[start] === 0xFF && daten[start + 1] === 0xD8)) continue;
     const endIdx = daten.indexOf(Buffer.from([0xFF, 0xD9]), start);
     if (endIdx === -1) continue;
 
     const bild = daten.slice(start, endIdx + 2);
-    if (bild.length < 1500) continue; // sehr kleine Grafiken (Logos) ueberspringen
+    if (bild.length < 1500) continue; // skip very small graphics (logos)
 
     const ziel = `${zielBasis}-b${gefunden.length + 1}.jpg`;
     try {
       fs.writeFileSync(ziel, bild);
       gefunden.push(ziel);
-    } catch { /* weiter */ }
+    } catch { /* continue */ }
   }
   return gefunden;
 }
@@ -228,8 +229,8 @@ function ascii85Dekodieren(puffer) {
   return Buffer.from(aus);
 }
 
-// Prueft, ob das PDF eine Textebene besitzt (durchsuchbar) oder ein reiner Scan ist.
-// Entscheidend fuer die Frage, ob sich Felder aus dem Inhalt auslesen lassen.
+// Checks whether the PDF has a text layer (searchable) or is a pure scan.
+// Decides whether fields can be read from the content.
 function analysiereText(pdfPfad) {
   let daten;
   try { daten = fs.readFileSync(pdfPfad); } catch { return null; }
@@ -238,7 +239,7 @@ function analysiereText(pdfPfad) {
   const roh = daten.toString('latin1');
   const schriften = (roh.match(/\/Type\s*\/Font/g) || []).length;
 
-  // Inhaltsstroeme entpacken und nach Textoperatoren suchen
+  // Unpack the content streams and look for text operators
   let textZeichen = 0;
   let textBloecke = 0;
   let pos = 0;
@@ -257,7 +258,7 @@ function analysiereText(pdfPfad) {
     untersucht += 1;
     if (/\/Subtype\s*\/Image/.test(kopf)) continue;
 
-    // Filterkette der Reihe nach anwenden, z. B. [/ASCII85Decode /FlateDecode]
+    // Apply the filter chain in order, e.g. [/ASCII85Decode /FlateDecode]
     const filterTeil = (kopf.match(/\/Filter\s*(\[[^\]]*\]|\/\w+)/) || [])[1] || '';
     const filter = (filterTeil.match(/\/\w+/g) || []).map((f) => f.slice(1));
     let puffer = roher;
@@ -272,7 +273,7 @@ function analysiereText(pdfPfad) {
         const hex = puffer.toString('latin1').replace(/[^0-9A-Fa-f]/g, '');
         puffer = Buffer.from(hex, 'hex');
       } else {
-        unbekannt = true; break; // Bildkompression o. Ä.
+        unbekannt = true; break; // image compression or similar
       }
     }
     if (unbekannt) continue;
@@ -293,7 +294,7 @@ function analysiereText(pdfPfad) {
   };
 }
 
-// Zaehlt, welche Bildarten im PDF stecken — fuer verstaendliche Fehlermeldungen
+// Counts which image types the PDF contains — for understandable error messages
 function analysiereBilder(pdfPfad) {
   let daten;
   try { daten = fs.readFileSync(pdfPfad); } catch { return null; }
@@ -309,22 +310,22 @@ function analysiereBilder(pdfPfad) {
   };
 }
 
-// Probiert mehrere Bilder nacheinander, bis ein QR-Code gefunden wird
+// Tries several images one after another until a QR code is found
 function leseQrAusBildern(bilder, eigenerBefehl, cb) {
   let letzteDiagnose = null;
   const naechstes = (i) => {
     if (i >= bilder.length) {
-      if (bilder.length === 0) return cb(null, 'Kein auswertbares Bild im PDF gefunden', null, letzteDiagnose);
-      // Startproblem des Lesers hat Vorrang vor "nichts gefunden"
+      if (bilder.length === 0) return cb(null, L('No usable image found in the PDF'), null, letzteDiagnose);
+      // A start-up problem of the reader takes precedence over "nothing found"
       if (letzteDiagnose && letzteDiagnose.fehlt) {
-        return cb(null, letzteDiagnose.hinweisText || 'QR-Leser konnte nicht gestartet werden', null, letzteDiagnose);
+        return cb(null, letzteDiagnose.hinweisText || L('The QR reader could not be started'), null, letzteDiagnose);
       }
-      return cb(null, `In ${bilder.length} Bild(ern) kein QR-Code erkannt`, null, letzteDiagnose);
+      return cb(null, L('No QR code detected in {count} image(s)', { count: bilder.length }), null, letzteDiagnose);
     }
     leseQrCode(bilder[i], eigenerBefehl, (wert, hinweis, diagnose) => {
       if (diagnose) { letzteDiagnose = diagnose; letzteDiagnose.hinweisText = hinweis; }
       if (wert) return cb(wert, null, bilder[i], diagnose);
-      // Startet der Leser gar nicht, bringen weitere Bilder nichts
+      // If the reader does not start at all, further images do not help
       if (diagnose && diagnose.fehlt) return cb(null, hinweis, null, diagnose);
       naechstes(i + 1);
     });
@@ -334,7 +335,7 @@ function leseQrAusBildern(bilder, eigenerBefehl, cb) {
 
 function renderSeiteExtern(seite, dpi, pdfPfad, tmpBasis, cb) {
   const versuche = [
-    // PGM und JPEG kann der eingebaute Leser direkt auswerten
+    // The built-in reader can evaluate PGM and JPEG directly
     { name: 'pdftoppm', args: ['-gray', '-r', String(dpi), '-f', String(seite), '-l', String(seite), pdfPfad, tmpBasis] },
     { name: 'pdftocairo', args: ['-jpeg', '-gray', '-r', String(dpi), '-f', String(seite), '-l', String(seite), pdfPfad, tmpBasis] },
   ];
@@ -353,18 +354,18 @@ function renderSeiteExtern(seite, dpi, pdfPfad, tmpBasis, cb) {
 
 function deuteExitCodeExtern(code) {
   const c = Number(code) >>> 0;
-  if (c === 0xC0000005 || code === 3221225477) return 'Zugriffsverletzung (0xC0000005) — Programm stürzt ab, meist unvollständiges oder gemischtes Poppler-Paket.';
-  if (c === 0xC0000135 || code === 3221225781) return 'Fehlende DLL (0xC0000135) — bitte kompletten bin-Ordner kopieren.';
-  if (c === 0xC000007B || code === 3221225595) return 'Architektur-Konflikt (0xC000007B) — 32/64-Bit gemischt.';
-  return `Exit-Code ${code}`;
+  if (c === 0xC0000005 || code === 3221225477) return L('Access violation (0xC0000005) — the program crashes, usually an incomplete or mixed Poppler package.');
+  if (c === 0xC0000135 || code === 3221225781) return L('Missing DLL (0xC0000135) — please copy the complete bin folder.');
+  if (c === 0xC000007B || code === 3221225595) return L('Architecture conflict (0xC000007B) — 32-bit and 64-bit files mixed.');
+  return L('Exit code {code}', { code });
 }
 
-// Prueft, ob die Poppler-Ablage stimmt. Entscheidend ist, dass der
-// Datenordner share\poppler die richtige Lage zur .exe behaelt --
-// im Archiv liegt er NEBEN "Library", nicht darin.
+// Checks whether the Poppler files are in the right place. What matters is that
+// the data folder share\poppler keeps the right position relative to the .exe --
+// in the archive it sits NEXT TO "Library", not inside it.
 function pruefePopplerAblage() {
   const exe = findeWerkzeug('pdftoppm', 'poppler');
-  if (!path.isAbsolute(exe)) return { relevant: false, hinweis: 'pdftoppm wird über die PATH-Variable genutzt.' };
+  if (!path.isAbsolute(exe)) return { relevant: false, hinweis: L('pdftoppm is used via the PATH variable.') };
 
   const binDir = path.dirname(exe);
   const dllAnzahl = (() => {
@@ -372,7 +373,7 @@ function pruefePopplerAblage() {
     catch { return 0; }
   })();
 
-  // share\poppler kann eine oder zwei Ebenen ueber bin liegen
+  // share\poppler can be one or two levels above bin
   const moeglicheDatenPfade = [
     path.join(binDir, '..', 'share', 'poppler'),
     path.join(binDir, '..', '..', 'share', 'poppler'),
@@ -382,10 +383,10 @@ function pruefePopplerAblage() {
 
   const probleme = [];
   if (dllAnzahl === 0) {
-    probleme.push('Im Ordner der pdftoppm.exe liegt keine einzige DLL — es wurde offenbar nur die .exe kopiert.');
+    probleme.push(L('There is not a single DLL in the folder of pdftoppm.exe — apparently only the .exe was copied.'));
   }
   if (!datenPfad) {
-    probleme.push('Der Datenordner "share\\poppler" wurde nicht gefunden. Im Poppler-Archiv liegt er NEBEN dem Ordner "Library" — beide zusammen kopieren, sonst stürzt pdftoppm ab (0xC0000005).');
+    probleme.push(L('The data folder "share\\poppler" was not found. In the Poppler archive it is NEXT TO the "Library" folder — copy both together, otherwise pdftoppm crashes (0xC0000005).'));
   }
 
   return {
@@ -398,7 +399,7 @@ function pruefePopplerAblage() {
   };
 }
 
-// Erzeugt ein winziges gueltiges PDF, um das Rendern wirklich auszuprobieren
+// Creates a tiny valid PDF to really try out rendering
 function schreibeTestPdf() {
   const inhalt = [
     '%PDF-1.4',
@@ -413,38 +414,38 @@ function schreibeTestPdf() {
   return pfad;
 }
 
-// Probiert einen echten Rendervorgang — erkennt Abstuerze, die ein blosses "-v" nicht zeigt
+// Tries a real rendering run — detects crashes that a plain "-v" does not show
 function pruefeRendern(cb) {
   const pdf = schreibeTestPdf();
   const ziel = path.join(os.tmpdir(), 'fp-test-' + crypto.randomBytes(4).toString('hex'));
   renderSeiteExtern(1, 72, pdf, ziel, (fehler, verwendet) => {
-    try { fs.unlinkSync(pdf); } catch { /* egal */ }
+    try { fs.unlinkSync(pdf); } catch { /* ignore */ }
     try {
       const dir = path.dirname(ziel);
       const basis = path.basename(ziel);
       fs.readdirSync(dir).filter((f) => f.startsWith(basis)).forEach((f) => {
-        try { fs.unlinkSync(path.join(dir, f)); } catch { /* egal */ }
+        try { fs.unlinkSync(path.join(dir, f)); } catch { /* ignore */ }
       });
-    } catch { /* egal */ }
+    } catch { /* ignore */ }
     cb({ ok: !fehler, verwendet: verwendet || null, fehler: fehler || null });
   });
 }
 
-// Prueft, ob die vorhandene zbarimg-Version QR-Codes ueberhaupt beherrscht.
-// Alte Windows-Builds (0.10) koennen nur EAN/UPC, Code 128, Code 39 und I2/5.
+// Checks whether the installed zbarimg version supports QR codes at all.
+// Old Windows builds (0.10) only support EAN/UPC, Code 128, Code 39 and I2/5.
 function pruefeQrFaehigkeit(cb) {
   const zbar = findeWerkzeug('zbarimg', 'zbar');
-  // Ein absichtlich leeres Bild erzeugen: zbarimg listet dann die Symbologien auf
+  // Create a deliberately empty image: zbarimg then lists the symbologies
   const leer = path.join(os.tmpdir(), 'fp-qrtest-' + crypto.randomBytes(4).toString('hex') + '.pgm');
   try {
-    // Kleines graues PGM ohne Inhalt — von zbarimg ohne Fremdbibliothek lesbar
+    // Small grey PGM without content — readable by zbarimg without extra libraries
     const breite = 64; const hoehe = 64;
     const kopf = Buffer.from(`P5\n${breite} ${hoehe}\n255\n`, 'latin1');
     fs.writeFileSync(leer, Buffer.concat([kopf, Buffer.alloc(breite * hoehe, 0xFF)]));
   } catch { return cb({ pruefbar: false }); }
 
   execFile(zbar, [leer], { timeout: 20000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-    try { fs.unlinkSync(leer); } catch { /* egal */ }
+    try { fs.unlinkSync(leer); } catch { /* ignore */ }
     const text = `${stdout || ''} ${stderr || ''}`;
     if (err && err.code === 'ENOENT') return cb({ pruefbar: false, fehlt: true });
     if (!/supported symbologies/i.test(text)) return cb({ pruefbar: false, ausgabe: text.slice(0, 200) });
@@ -454,7 +455,7 @@ function pruefeQrFaehigkeit(cb) {
   });
 }
 
-// Meldet zurueck, welche Werkzeuge fuer die PDF-Verarbeitung bereitstehen
+// Reports which tools are available for PDF processing
 function pruefeVerarbeitungsWerkzeuge(cb) {
   pruefeWerkzeugDetail('pdftoppm', 'poppler', ['-v'], (p) => {
     pruefeWerkzeugDetail('pdftocairo', 'poppler', ['-v'], (pc) => {
@@ -469,18 +470,18 @@ function pruefeVerarbeitungsWerkzeuge(cb) {
   });
 }
 
-// ---------- QR-Code auslesen ----------
+// ---------- Reading the QR code ----------
 
-// Liest den QR-Code aus einer Bilddatei. Standardweg ist zbarimg; alternativ
-// laesst sich in den Einstellungen ein eigener Befehl hinterlegen
-// (Platzhalter {datei} wird durch den Bildpfad ersetzt).
+// Reads the QR code from an image file. The default is zbarimg; alternatively
+// a custom command can be set in the settings
+// (the placeholder {datei} is replaced by the image path).
 /**
- * Liest den QR-Code aus einer Bilddatei.
- * Probiert mehrere Aufrufvarianten, weil sich zbarimg je nach Version
- * unterschiedlich verhaelt (aeltere Ausgaben kennen --raw nicht und
- * schreiben stattdessen "QR-Code:WERT").
+ * Reads the QR code from an image file.
+ * Tries several call variants because zbarimg behaves differently depending
+ * on the version (older releases do not know --raw and print
+ * "QR-Code:VALUE" instead).
  */
-// Entfernt das Symbologie-Praefix, das zbarimg ohne --raw ausgibt ("QR-Code:1234")
+// Removes the symbology prefix that zbarimg prints without --raw ("QR-Code:1234")
 function ohnePraefix(text) {
   const zeile = String(text || '').split('\n')[0].trim();
   const m = zeile.match(/^([A-Za-z0-9-]+(?:\/[A-Za-z0-9-]+)?):(.*)$/);
@@ -490,15 +491,15 @@ function ohnePraefix(text) {
   return zeile;
 }
 
-// Eingebauter Leser: braucht keine Fremdprogramme. Funktioniert mit JPEG.
+// Built-in reader: needs no external programs. Works with JPEG.
 function lesePgm(daten) {
-  // Binaeres PGM (P5): Kopf besteht aus Kennung, Breite, Hoehe, Maximalwert
+  // Binary PGM (P5): the header consists of magic number, width, height, maximum value
   if (!(daten[0] === 0x50 && daten[1] === 0x35)) return null;
   let pos = 2;
   const zahlen = [];
   while (zahlen.length < 3 && pos < daten.length) {
     while (pos < daten.length && /\s/.test(String.fromCharCode(daten[pos]))) pos += 1;
-    if (daten[pos] === 0x23) { // Kommentarzeile
+    if (daten[pos] === 0x23) { // comment line
       while (pos < daten.length && daten[pos] !== 0x0A) pos += 1;
       continue;
     }
@@ -509,7 +510,7 @@ function lesePgm(daten) {
     if (zahl === '') return null;
     zahlen.push(Number(zahl));
   }
-  pos += 1; // ein Trennzeichen nach dem Maximalwert
+  pos += 1; // one separator after the maximum value
   const [breite, hoehe, max] = zahlen;
   if (!breite || !hoehe || max > 255) return null;
   const grau = daten.slice(pos, pos + breite * hoehe);
@@ -535,26 +536,26 @@ function leseQrIntern(bildPfad) {
 }
 
 function leseQrCode(bildPfad, eigenerBefehl, cb) {
-  // Zuerst der eingebaute Leser — kein externes Programm nötig
+  // The built-in reader first — no external program needed
   if (!eigenerBefehl || !eigenerBefehl.trim()) {
     const intern = leseQrIntern(bildPfad);
-    if (intern) return cb(intern, null, { quelle: 'eingebauter Leser' });
+    if (intern) return cb(intern, null, { quelle: L('built-in reader') });
   }
   if (eigenerBefehl && eigenerBefehl.trim()) {
     const teile = eigenerBefehl.trim().split(/\s+/).map((t) => t.replace('{datei}', bildPfad));
     return execFile(teile[0], teile.slice(1), { timeout: 30000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       const wert = ohnePraefix(stdout);
-      if (err && !wert) return cb(null, `Eigener QR-Befehl fehlgeschlagen: ${(stderr || err.message).split('\n')[0]}`, { befehl: teile.join(' ') });
-      cb(wert || null, wert ? null : 'Eigener QR-Befehl lieferte keinen Wert', { befehl: teile.join(' ') });
+      if (err && !wert) return cb(null, L('Custom QR command failed: {error}', { error: (stderr || err.message).split('\n')[0] }), { befehl: teile.join(' ') });
+      cb(wert || null, wert ? null : L('Custom QR command returned no value'), { befehl: teile.join(' ') });
     });
   }
 
   const zbar = findeWerkzeug('zbarimg', 'zbar');
   const varianten = [
     { args: ['--quiet', '--raw', bildPfad], name: '--quiet --raw' },
-    { args: ['-q', bildPfad], name: '-q (mit Typ-Präfix)' },
-    { args: ['--quiet', '--raw', '-Sdisable', '-Sqrcode.enable', bildPfad], name: 'nur QR aktiviert' },
-    { args: [bildPfad], name: 'ohne Optionen' },
+    { args: ['-q', bildPfad], name: '-q (with type prefix)' },
+    { args: ['--quiet', '--raw', '-Sdisable', '-Sqrcode.enable', bildPfad], name: 'QR only' },
+    { args: [bildPfad], name: 'no options' },
   ];
   const protokoll = [];
   let nichtStartbar = 0;
@@ -562,28 +563,25 @@ function leseQrCode(bildPfad, eigenerBefehl, cb) {
   const versuche = (i) => {
     if (i >= varianten.length) {
       if (nichtStartbar === varianten.length) {
-        return cb(null, `Optionaler externer Leser zbarimg nicht verfügbar (gesucht als "${zbar}"). Die Erkennung erfolgt normalerweise über den eingebauten Leser.`, { zbar, protokoll, fehlt: true });
+        return cb(null, L('Optional external reader zbarimg not available (looked for "{path}"). Detection normally uses the built-in reader.', { path: zbar }), { zbar, protokoll, fehlt: true });
       }
 
-      // zbarimg listet bei Misserfolg die unterstuetzten Symbologien auf.
-      // Fehlt QR darin, wurde diese Version ohne QR-Unterstuetzung gebaut
-      // (betrifft u. a. den alten Windows-Installer 0.10).
+      // On failure, zbarimg lists the supported symbologies.
+      // If QR is missing, this version was built without QR support
+      // (affects, among others, the old Windows installer 0.10).
       const alleMeldungen = protokoll.map((p) => `${p.fehler} ${p.ausgabe}`).join(' ');
       if (/supported symbologies/i.test(alleMeldungen) && !/QR/i.test(alleMeldungen)) {
         return cb(null,
-          'Diese ZBar-Version kann keine QR-Codes lesen — sie wurde ohne QR-Unterstützung gebaut '
-          + '(die Meldung listet nur EAN/UPC, Code 128, Code 39 und Interleaved 2 of 5). '
-          + 'Abhilfe: neuere ZBar-Version verwenden, z. B. aus den GitHub-Releases 0.23.90 bis 0.23.92. '
-          + 'Der alte SourceForge-Installer (0.10) ist dafür ungeeignet.',
+          L('This ZBar version cannot read QR codes — it was built without QR support (the message only lists EAN/UPC, Code 128, Code 39 and Interleaved 2 of 5). Remedy: use a newer ZBar version, e.g. from the GitHub releases 0.23.90 to 0.23.92. The old SourceForge installer (0.10) is not suitable.'),
           { zbar, protokoll, ohneQrUnterstuetzung: true });
       }
 
       const meldungen = Array.from(new Set(protokoll.map((p) => p.fehler).filter(Boolean)));
       const codes = Array.from(new Set(protokoll.map((p) => p.exitCode)));
       const zusatz = meldungen.length
-        ? ` zbarimg meldet: ${meldungen.slice(0, 2).join(' | ').slice(0, 300)}`
-        : ` zbarimg lief durch (Exit ${codes.join('/')}), gab aber keinen Code zurück.`;
-      return cb(null, `Kein QR-Code erkannt.${zusatz}`, { zbar, protokoll });
+        ? ' ' + L('zbarimg reports: {message}', { message: meldungen.slice(0, 2).join(' | ').slice(0, 300) })
+        : ' ' + L('zbarimg ran (exit {codes}) but returned no code.', { codes: codes.join('/') });
+      return cb(null, L('No QR code detected.') + zusatz, { zbar, protokoll });
     }
     const v = varianten[i];
     execFile(zbar, v.args, { timeout: 30000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -608,33 +606,50 @@ function leseQrCode(bildPfad, eigenerBefehl, cb) {
   versuche(0);
 }
 
-// ---------- Platzhalter in der Metadaten-Vorlage ersetzen ----------
+// ---------- Replacing placeholders in the metadata template ----------
 
 const STANDARD_VORLAGE = JSON.stringify({
-  name: '{dateinameOhneEndung}',
-  order_id: '{qrWert}',
-  date: '{unixzeit}',
+  name: '{filenameWithoutExt}',
+  order_id: '{qrValue}',
+  date: '{unixtime}',
 }, null, 2);
 
 /**
- * Ersetzt Platzhalter in der Vorlage. Verfuegbar sind u. a.
- * {probennummer} {qrGefunden} {dateiname} {dateinameOhneEndung}
- * {unixzeit} {isozeit} {groesseBytes} {jobName} {auftragsnummer}
- * sowie {gruppe:name} aus dem Dateinamen-Ausdruck.
+ * Adds the English names of the placeholders. The older names
+ * ({qrWert}, {dateiname}, {gruppe:name} …) remain valid so that existing
+ * templates keep working unchanged.
+ */
+function mitEnglischenNamen(werte) {
+  const aus = { ...werte };
+  const alias = {
+    qrValue: 'qrWert', qrFound: 'qrGefunden', filename: 'dateiname', filenameWithoutExt: 'dateinameOhneEndung',
+    unixtime: 'unixzeit', isotime: 'isozeit', sizeBytes: 'groesseBytes', fixedValue: 'festwert',
+  };
+  Object.entries(alias).forEach(([en, de]) => { if (de in werte) aus[en] = werte[de]; });
+  Object.keys(werte).filter((k) => k.startsWith('gruppe:')).forEach((k) => { aus['group:' + k.slice(7)] = werte[k]; });
+  return aus;
+}
+
+/**
+ * Replaces placeholders in the template. Available are, among others,
+ * {qrValue} {qrFound} {filename} {filenameWithoutExt}
+ * {unixtime} {isotime} {sizeBytes} {jobName} {fixedValue}
+ * and {group:name} from the file name expression (older German names are aliases).
  */
 function fuelleVorlage(vorlage, werte) {
   let text = String(vorlage || STANDARD_VORLAGE);
+  werte = mitEnglischenNamen(werte);
 
-  // Zahlenfelder ohne Anfuehrungszeichen ausgeben, wenn die Vorlage sie
-  // in Anfuehrungszeichen setzt, der Wert aber eine reine Zahl ist.
+  // Write number fields without quotes if the template puts them
+  // in quotes but the value is a plain number.
   Object.entries(werte).forEach(([schluessel, wert]) => {
     const platzhalter = new RegExp(`"\\{${schluessel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}"|\\{${schluessel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`, 'g');
     text = text.replace(platzhalter, (treffer) => {
       const inAnfuehrung = treffer.startsWith('"');
       if (wert === null || wert === undefined) return inAnfuehrung ? 'null' : 'null';
       if (typeof wert === 'boolean') return String(wert);
-      // Nur echte JSON-Zahlen ohne führende Nullen unquoted ausgeben.
-      // "001" muss Text bleiben, sonst entsteht ungültiges JSON.
+      // Only write real JSON numbers without leading zeros unquoted.
+      // "001" must stay text, otherwise the JSON would be invalid.
       const istZahl = typeof wert === 'number' || /^-?(0|[1-9]\d*)(\.\d+)?$/.test(String(wert));
       if (inAnfuehrung && istZahl) return String(wert);      // "123" -> 123
       if (inAnfuehrung) return JSON.stringify(String(wert)).slice(0);
@@ -642,12 +657,12 @@ function fuelleVorlage(vorlage, werte) {
     });
   });
 
-  // Nicht belegte Platzhalter neutralisieren, damit gueltiges JSON entsteht
+  // Neutralise unused placeholders so that the JSON stays valid
   text = text.replace(/"\{[^}]+\}"/g, 'null').replace(/\{[a-zA-Z0-9_:.-]+\}/g, 'null');
   return text;
 }
 
-// Zieht benannte Gruppen aus dem Dateinamen, z. B. ^(?<auftrag>\d+)_
+// Extracts named groups from the file name, e.g. ^(?<order>\d+)_
 function gruppenAusDateiname(dateiname, ausdruck) {
   if (!ausdruck || !ausdruck.trim()) return {};
   try {
@@ -657,16 +672,16 @@ function gruppenAusDateiname(dateiname, ausdruck) {
     Object.entries(treffer.groups).forEach(([k, v]) => { raus['gruppe:' + k] = v === undefined ? null : v; });
     return raus;
   } catch {
-    return {}; // ungueltiger Ausdruck soll die Uebertragung nicht stoppen
+    return {}; // an invalid expression must not stop the transfer
   }
 }
 
 // ---------- PDF → JSON ----------
 
 /**
- * Wandelt ein eingescanntes PDF in eine JSON-Nachricht um.
- * Ergebnis ist der Pfad einer temporaeren .json-Datei, die anschliessend
- * per curl gesendet wird. Der Aufrufer muss sie danach aufraeumen.
+ * Converts a scanned PDF into a JSON message.
+ * The result is the path of a temporary .json file that is then sent
+ * via curl. The caller must clean it up afterwards.
  */
 function pdfZuJson(job, pdfPfad, einstellungen, cb) {
   const tmpBasis = path.join(os.tmpdir(), 'fp-' + crypto.randomBytes(6).toString('hex'));
@@ -675,20 +690,20 @@ function pdfZuJson(job, pdfPfad, einstellungen, cb) {
   const aufraeumen = [];
 
   const fertig = (fehler, jsonPfad, info) => {
-    aufraeumen.forEach((f) => { try { fs.unlinkSync(f); } catch { /* egal */ } });
-    // Auch angefangene Renderausgaben entfernen, die nicht in der Liste stehen
+    aufraeumen.forEach((f) => { try { fs.unlinkSync(f); } catch { /* ignore */ } });
+    // Also remove partial render output that is not in the list
     try {
       const dir = path.dirname(tmpBasis);
       const praefix = path.basename(tmpBasis);
       fs.readdirSync(dir)
         .filter((f) => f.startsWith(praefix) && !f.endsWith('.json'))
-        .forEach((f) => { try { fs.unlinkSync(path.join(dir, f)); } catch { /* egal */ } });
-    } catch { /* egal */ }
+        .forEach((f) => { try { fs.unlinkSync(path.join(dir, f)); } catch { /* ignore */ } });
+    } catch { /* ignore */ }
     cb(fehler, jsonPfad, info);
   };
 
-  // Vorprüfung: Ist das PDF überhaupt vollständig geschrieben?
-  // Scanner und Kopierer legen die Datei oft an und füllen sie erst danach.
+  // Pre-check: has the PDF been written completely at all?
+  // Scanners and copiers often create the file first and fill it afterwards.
   let kopf = Buffer.alloc(0);
   let schwanz = Buffer.alloc(0);
   try {
@@ -700,34 +715,34 @@ function pdfZuJson(job, pdfPfad, einstellungen, cb) {
     schwanz = Buffer.alloc(schwanzLaenge);
     fs.readSync(fd, schwanz, 0, schwanzLaenge, Math.max(0, groesse - schwanzLaenge));
     fs.closeSync(fd);
-    if (groesse === 0) return fertig('Datei ist noch leer — vermutlich wird sie gerade erst geschrieben. Ruhezeit im Job erhöhen.', null, null);
+    if (groesse === 0) return fertig(L('The file is still empty — it is probably still being written. Increase the settle time in the job.'), null, null);
   } catch (e) {
-    return fertig(`Datei nicht lesbar: ${e.message}`, null, null);
+    return fertig(L('File not readable: {error}', { error: e.message }), null, null);
   }
   if (kopf.toString('latin1') !== '%PDF-') {
-    return fertig('Datei beginnt nicht mit %PDF — keine gültige PDF-Datei oder noch unvollständig.', null, null);
+    return fertig(L('The file does not start with %PDF — not a valid PDF file or still incomplete.'), null, null);
   }
   if (!schwanz.toString('latin1').includes('%%EOF')) {
-    return fertig('PDF ist unvollständig (Endmarkierung %%EOF fehlt) — die Datei wird vermutlich gerade noch geschrieben. Ruhezeit im Job erhöhen (Feld "Mindestalter der Datei").', null, null);
+    return fertig(L('The PDF is incomplete (end marker %%EOF missing) — the file is probably still being written. Increase the settle time in the job (field "Minimum file age").'), null, null);
   }
 
-// Modulweite Renderfunktion (auch fuer den Selbsttest nutzbar)
-// Uebersetzt typische Windows-Abbruchcodes in verstaendlichen Klartext
+// Module-wide render function (also usable for the self-check)
+// Translates typical Windows exit codes into plain language
 function deuteExitCode(code) {
   const c = Number(code) >>> 0;
   if (c === 0xC0000005 || code === 3221225477) {
-    return 'Zugriffsverletzung (0xC0000005) — das Programm startet, stürzt dann ab. Meist ein unvollständiges oder gemischtes Poppler-Paket: bitte den kompletten bin-Ordner einer einzigen Poppler-Version kopieren, keine Dateien aus verschiedenen Versionen mischen.';
+    return L('Access violation (0xC0000005) — the program starts and then crashes. Usually an incomplete or mixed Poppler package: copy the complete bin folder of a single Poppler version, do not mix files from different versions.');
   }
   if (c === 0xC0000135 || code === 3221225781) {
-    return 'Fehlende DLL (0xC0000135) — es fehlen Bibliotheken im selben Ordner. Bitte den kompletten Inhalt des bin-Ordners kopieren, nicht nur die .exe.';
+    return L('Missing DLL (0xC0000135) — libraries are missing in the same folder. Please copy the complete contents of the bin folder, not just the .exe.');
   }
   if (c === 0xC000007B || code === 3221225595) {
-    return 'Architektur-Konflikt (0xC000007B) — 32-Bit- und 64-Bit-Dateien gemischt. Bitte eine durchgängige 64-Bit-Version verwenden.';
+    return L('Architecture conflict (0xC000007B) — 32-bit and 64-bit files mixed. Please use a consistent 64-bit version.');
   }
-  return `Exit-Code ${code}`;
+  return L('Exit code {code}', { code });
 }
 
-// Rendert die Seite; faellt bei Absturz automatisch auf pdftocairo zurueck
+// Renders the page; falls back to pdftocairo automatically after a crash
 function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
   const versuche = [
     { name: 'pdftoppm', args: ['-gray', '-r', String(dpi), '-f', String(seite), '-l', String(seite), pdfPfad, tmpBasis] },
@@ -744,7 +759,7 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
       const text = details
         ? `${v.name}: ${details.split('\n').slice(0, 2).join(' | ')}`
         : `${v.name}: ${deuteExitCode(err.code)}`;
-      // Bei Absturz oder fehlendem Programm den naechsten Weg probieren
+      // On a crash or a missing program, try the next way
       naechster(i + 1, bisher ? `${bisher} — ${text}` : text);
     });
   };
@@ -752,10 +767,10 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
 }
 
   renderSeite(seite, dpi, pdfPfad, tmpBasis, (renderFehler, verwendet) => {
-      // Scheitern beide Renderer, die eingebetteten Scan-Bilder direkt aus
-      // dem PDF ziehen und der Reihe nach nach einem QR-Code absuchen.
+      // If both renderers fail, extract the embedded scan images directly
+      // from the PDF and search them for a QR code one after another.
       if (renderFehler) {
-        // Alle Seitenbilder holen — JPEG wie auch Schwarzweiß-Scans (CCITT)
+        // Get all page images — JPEG as well as black-and-white scans (CCITT)
         const seiten = seitenBilder(pdfPfad);
         const bilder = [];
         seiten.slice(0, 12).forEach((seite, i) => {
@@ -765,7 +780,7 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
               fs.writeFileSync(pfad, seite.jpeg);
               bilder.push(pfad);
             } else {
-              // Graustufen als PGM ablegen — der eingebaute Leser kann das direkt
+              // Store greyscale as PGM — the built-in reader can read that directly
               const pfad = `${tmpBasis}-direkt-${i}.pgm`;
               fs.writeFileSync(pfad, Buffer.concat([
                 Buffer.from(`P5\n${seite.breite} ${seite.hoehe}\n255\n`, 'latin1'),
@@ -773,20 +788,22 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
               ]));
               bilder.push(pfad);
             }
-          } catch { /* Seite überspringen */ }
+          } catch { /* skip the page */ }
         });
         bilder.forEach((b) => aufraeumen.push(b));
         if (bilder.length === 0) {
           const arten = analysiereBilder(pdfPfad);
           const artText = arten
-            ? ` Im PDF gefunden: ${arten.bilder} Bild(er) — JPEG: ${arten.jpeg}, CCITT: ${arten.ccitt}, JBIG2: ${arten.jbig2}, JPEG2000: ${arten.jpx}. Die Direktauslesung beherrscht nur JPEG; bei CCITT/JBIG2 wird ein funktionierender Renderer benötigt.`
+            ? ' ' + L('Found in the PDF: {images} image(s) — JPEG: {jpeg}, CCITT: {ccitt}, JBIG2: {jbig2}, JPEG 2000: {jpx}. JBIG2 and JPEG 2000 require a working renderer.', {
+              images: arten.bilder, jpeg: arten.jpeg, ccitt: arten.ccitt, jbig2: arten.jbig2, jpx: arten.jpx,
+            })
             : '';
-          return fertig(`PDF konnte nicht gerendert werden. ${renderFehler} — Auch das direkte Auslesen war nicht möglich.${artText}`, null, null);
+          return fertig(L('The PDF could not be rendered. {error} — reading the images directly was not possible either.', { error: renderFehler }) + artText, null, null);
         }
         return leseQrAusBildern(bilder, einstellungen && einstellungen.qrBefehl, (wert, hinweis, benutztesBild, diagnose) => {
           verarbeiteQrErgebnis(
             benutztesBild || bilder[0],
-            `Direktauslesung aus ${bilder.length} eingebetteten Bild(ern), Poppler übersprungen`,
+            L('Read directly from {count} embedded image(s), Poppler skipped', { count: bilder.length }),
             wert,
             hinweis,
             diagnose,
@@ -794,15 +811,15 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
         });
       }
 
-      // pdftoppm haengt die Seitennummer an, Stellenzahl variiert
+      // pdftoppm appends the page number; the number of digits varies
       const dir = path.dirname(tmpBasis);
       const praefix = path.basename(tmpBasis);
       let bild = null;
       try {
         const treffer = fs.readdirSync(dir).filter((f) => f.startsWith(praefix) && (f.endsWith('.pgm') || f.endsWith('.jpg') || f.endsWith('.png')));
         if (treffer.length > 0) bild = path.join(dir, treffer[0]);
-      } catch { /* faellt unten auf Fehler */ }
-      if (!bild) return fertig('Gerendertes Seitenbild wurde nicht gefunden', null, null);
+      } catch { /* falls through to the error below */ }
+      if (!bild) return fertig(L('Rendered page image not found'), null, null);
       aufraeumen.push(bild);
       weiterMitBild(bild, verwendet);
     });
@@ -813,20 +830,20 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
       });
     }
 
-    // Fuer den Fall, dass der QR-Code schon beim Durchsuchen mehrerer
-    // Bilder gefunden (oder endgueltig nicht gefunden) wurde
+    // In case the QR code was already found (or definitely not found)
+    // while searching several images
     function weiterMitVorabErgebnis(bild, quelle, wert, hinweis) {
       verarbeiteQrErgebnis(bild, quelle, wert, hinweis, null);
     }
 
-    function verarbeiteQrErgebnis(bild, quelle, probennummer, qrHinweis, diagnose) {
+    function verarbeiteQrErgebnis(bild, quelle, qrValue, qrHinweis, diagnose) {
       (function () {
-        // Wird kein Code erkannt, das gepruefte Bild zur Sichtkontrolle ablegen.
-        // Nur so laesst sich beurteilen, ob ueberhaupt die richtige Seite ankam.
+        // If no code is detected, store the checked image for visual inspection.
+        // This is the only way to judge whether the right page arrived at all.
         let pruefBild = null;
-        if (!probennummer && job.sourcePath) {
+        if (!qrValue && job.sourcePath) {
           try {
-            const ordner = path.join(job.sourcePath, '_qr-pruefung');
+            const ordner = path.join(job.sourcePath, '_qr-check');
             fs.mkdirSync(ordner, { recursive: true });
             const name = path.basename(pdfPfad).replace(/\.[^.]+$/, '') + path.extname(bild);
             pruefBild = path.join(ordner, name);
@@ -834,14 +851,14 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
           } catch { pruefBild = null; }
         }
         let groesse = 0;
-        try { groesse = fs.statSync(pdfPfad).size; } catch { /* egal */ }
+        try { groesse = fs.statSync(pdfPfad).size; } catch { /* ignore */ }
 
         const jetzt = new Date();
         const dateiname = path.basename(pdfPfad);
         const werte = {
-          qrWert: probennummer || null,
-          probennummer: probennummer || null,   // Alias, aeltere Vorlagen laufen weiter
-          qrGefunden: Boolean(probennummer),
+          qrWert: qrValue || null,
+          probennummer: qrValue || null,   // alias, older templates keep working
+          qrGefunden: Boolean(qrValue),
           dateiname,
           dateinameOhneEndung: dateiname.replace(/\.[^.]+$/, ''),
           unixzeit: Math.floor(jetzt.getTime() / 1000),
@@ -853,25 +870,25 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
           ...gruppenAusDateiname(dateiname, job.dateinameRegex),
         };
 
-        // Aussagekraeftiger Hinweis: Bildquelle, ZBar-Rueckmeldung, Pruefbild
-        let hinweisText = qrHinweis || 'Kein QR-Code lesbar';
-        if (!probennummer) {
+        // Meaningful hint: image source, ZBar feedback, check image
+        let hinweisText = qrHinweis || L('No readable QR code');
+        if (!qrValue) {
           const teile = [hinweisText];
-          teile.push(`Bildquelle: ${quelle || 'unbekannt'}`);
+          teile.push(L('Image source: {source}', { source: quelle || L('unknown') }));
           if (diagnose && diagnose.protokoll && diagnose.protokoll.length) {
             const letzte = diagnose.protokoll[diagnose.protokoll.length - 1];
             teile.push(`zbarimg (${diagnose.zbar}) Exit ${letzte.exitCode}${letzte.fehler ? ': ' + letzte.fehler : ''}`);
           }
-          if (diagnose && diagnose.befehl) teile.push(`Befehl: ${diagnose.befehl}`);
-          if (pruefBild) teile.push(`Geprüftes Bild zur Kontrolle abgelegt: ${pruefBild}`);
+          if (diagnose && diagnose.befehl) teile.push(L('Command: {command}', { command: diagnose.befehl }));
+          if (pruefBild) teile.push(L('Checked image stored for review: {path}', { path: pruefBild }));
           hinweisText = teile.join(' · ');
         }
 
         const info = {
-          qrWert: probennummer || null,
-          probennummer: probennummer || null,
-          qrGefunden: Boolean(probennummer),
-          qrHinweis: probennummer ? null : hinweisText,
+          qrWert: qrValue || null,
+          probennummer: qrValue || null,
+          qrGefunden: Boolean(qrValue),
+          qrHinweis: qrValue ? null : hinweisText,
           bildquelle: quelle || null,
         };
 
@@ -882,17 +899,17 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
           try {
             fs.writeFileSync(metaPfad, metaText, 'utf8');
           } catch (e) {
-            return fertig(`Metadaten konnten nicht geschrieben werden: ${e.message}`, null, null);
+            return fertig(L('Metadata could not be written: {error}', { error: e.message }), null, null);
           }
           return fertig(null, { modus: 'multipart', pdfPfad, metaPfad }, { ...info, metadaten: metaText });
         }
 
-        // --- Variante B: JSON-Rumpf mit eingebettetem PDF (Standard) ---
+        // --- Variant B: JSON body with embedded PDF (default) ---
         let pdfBase64 = '';
         try {
           pdfBase64 = fs.readFileSync(pdfPfad).toString('base64');
         } catch (e) {
-          return fertig(`PDF konnte nicht gelesen werden: ${e.message}`, null, null);
+          return fertig(L('The PDF could not be read: {error}', { error: e.message }), null, null);
         }
         const nachricht = {
           qrWert: werte.qrWert,
@@ -909,11 +926,11 @@ function renderSeite(seite, dpi, pdfPfad, tmpBasis, cb) {
         try {
           fs.writeFileSync(jsonPfad, JSON.stringify(nachricht));
         } catch (e) {
-          return fertig(`JSON konnte nicht geschrieben werden: ${e.message}`, null, null);
+          return fertig(L('JSON could not be written: {error}', { error: e.message }), null, null);
         }
         fertig(null, { modus: 'json', sendePfad: jsonPfad }, info);
       })();
     }
 }
 
-module.exports = { pdfZuJson, analysiereText, analysiereBilder, pruefeVerarbeitungsWerkzeuge, findeWerkzeug, fuelleVorlage, gruppenAusDateiname, pruefePopplerAblage, pruefeBenoetigteDlls, STANDARD_VORLAGE };
+module.exports = { pdfZuJson, analysiereText, analysiereBilder, pruefeVerarbeitungsWerkzeuge, findeWerkzeug, fuelleVorlage, gruppenAusDateiname, mitEnglischenNamen, pruefePopplerAblage, pruefeBenoetigteDlls, STANDARD_VORLAGE };

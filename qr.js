@@ -1,7 +1,7 @@
-// QR-Code-Decoder in reinem JavaScript.
-// Arbeitet auf einem Graustufenbild und braucht keine Fremdprogramme.
+// QR code decoder in plain JavaScript.
+// Works on a greyscale image and needs no external programs.
 
-// ---------- Galois-Feld GF(256) für die Fehlerkorrektur ----------
+// ---------- Galois field GF(256) for error correction ----------
 
 const EXP = new Uint8Array(512);
 const LOG = new Uint8Array(256);
@@ -11,7 +11,7 @@ const LOG = new Uint8Array(256);
     EXP[i] = x;
     LOG[x] = i;
     x <<= 1;
-    if (x & 0x100) x ^= 0x11D; // Generatorpolynom
+    if (x & 0x100) x ^= 0x11D; // generator polynomial
   }
   for (let i = 255; i < 512; i += 1) EXP[i] = EXP[i - 255];
 })();
@@ -19,7 +19,7 @@ const LOG = new Uint8Array(256);
 const gfMul = (a, b) => (a === 0 || b === 0 ? 0 : EXP[LOG[a] + LOG[b]]);
 const gfDiv = (a, b) => (a === 0 ? 0 : EXP[(LOG[a] - LOG[b] + 255) % 255]);
 
-// ---------- Polynomrechnung über GF(256) ----------
+// ---------- Polynomial arithmetic over GF(256) ----------
 
 function polyAuswerten(poly, x) {
   let y = poly[0];
@@ -46,8 +46,8 @@ function polyMultiplizieren(a, b) {
   return r;
 }
 
-// ---------- Reed-Solomon-Dekodierung ----------
-// Nullstellen des Generatorpolynoms sind α^0 … α^(anzahlEc-1).
+// ---------- Reed-Solomon decoding ----------
+// The roots of the generator polynomial are α^0 … α^(anzahlEc-1).
 
 function berechneSyndrome(nachricht, anzahlEc) {
   const s = [0];
@@ -55,7 +55,7 @@ function berechneSyndrome(nachricht, anzahlEc) {
   return s;
 }
 
-// Berlekamp-Massey: bestimmt das Fehlerstellenpolynom
+// Berlekamp-Massey: determines the error locator polynomial
 function findeFehlerOrtung(syndrome, anzahlEc) {
   let ortung = [1];
   let alt = [1];
@@ -82,7 +82,7 @@ function findeFehlerOrtung(syndrome, anzahlEc) {
   return ortung;
 }
 
-// Chien-Suche: Nullstellen des Fehlerstellenpolynoms = Fehlerpositionen
+// Chien search: roots of the error locator polynomial = error positions
 function findeFehlerPositionen(ortung, laenge) {
   const anzahlFehler = ortung.length - 1;
   const positionen = [];
@@ -94,21 +94,21 @@ function findeFehlerPositionen(ortung, laenge) {
   return positionen.length === anzahlFehler ? positionen : null;
 }
 
-// Forney: berechnet die Fehlerwerte und korrigiert
+// Forney: computes the error values and corrects them
 function korrigiereFehler(nachricht, syndrome, positionen) {
   const werte = nachricht.slice();
   const koeffPos = positionen.map((p) => werte.length - 1 - p);
 
-  // Fehlerstellenpolynom aus den gefundenen Positionen
+  // Error locator polynomial from the positions found
   let ortung = [1];
   koeffPos.forEach((i) => {
     ortung = polyMultiplizieren(ortung, polyAddieren([1], [EXP[i % 255], 0]));
   });
 
-  // Fehlerbewertungspolynom
+  // Error evaluator polynomial
   const synUmgekehrt = syndrome.slice().reverse();
   let bewerter = polyMultiplizieren(synUmgekehrt, ortung);
-  // Es müssen (Grad + 1) Koeffizienten übrig bleiben, nicht nur der Grad
+  // (degree + 1) coefficients must remain, not just the degree
   bewerter = bewerter.slice(bewerter.length - ortung.length);
   bewerter.reverse();
 
@@ -117,7 +117,7 @@ function korrigiereFehler(nachricht, syndrome, positionen) {
   for (let i = 0; i < X.length; i += 1) {
     const xiInv = gfDiv(1, X[i]);
 
-    // Ableitung des Fehlerstellenpolynoms an dieser Stelle
+    // Derivative of the error locator polynomial at this position
     let ableitung = 1;
     for (let j = 0; j < X.length; j += 1) {
       if (j === i) continue;
@@ -136,11 +136,11 @@ function korrigiereFehler(nachricht, syndrome, positionen) {
 function rsDekodiere(daten, anzahlEc) {
   const werte = Array.from(daten);
   const syndrome = berechneSyndrome(werte, anzahlEc);
-  if (syndrome.every((s) => s === 0)) return werte; // fehlerfrei
+  if (syndrome.every((s) => s === 0)) return werte; // no errors
 
   const ortung = findeFehlerOrtung(syndrome, anzahlEc);
   const anzahlFehler = ortung.length - 1;
-  if (anzahlFehler * 2 > anzahlEc) return null; // zu viele Fehler
+  if (anzahlFehler * 2 > anzahlEc) return null; // too many errors
 
   const positionen = findeFehlerPositionen(ortung, werte.length);
   if (!positionen) return null;
@@ -148,15 +148,15 @@ function rsDekodiere(daten, anzahlEc) {
   const korrigiert = korrigiereFehler(werte, syndrome, positionen);
   if (!korrigiert) return null;
 
-  // Gegenprobe
+  // Cross-check
   const pruefung = berechneSyndrome(korrigiert, anzahlEc);
   if (!pruefung.every((s) => s === 0)) return null;
   return korrigiert;
 }
 
-// ---------- Tabellen ----------
+// ---------- Tables ----------
 
-// Je Version und Fehlerkorrekturstufe: [EC-Codewörter je Block, Blöcke Gruppe1, Codewörter Gruppe1, Blöcke Gruppe2, Codewörter Gruppe2]
+// Per version and error correction level: [EC codewords per block, blocks group 1, codewords group 1, blocks group 2, codewords group 2]
 const EC_TABELLE = {
   1:  { L: [7,1,19,0,0],    M: [10,1,16,0,0],   Q: [13,1,13,0,0],   H: [17,1,9,0,0] },
   2:  { L: [10,1,34,0,0],   M: [16,1,28,0,0],   Q: [22,1,22,0,0],   H: [28,1,16,0,0] },
@@ -182,7 +182,7 @@ const EC_TABELLE = {
 
 const ALPHANUMERISCH = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
 
-// ---------- Bildvorbereitung ----------
+// ---------- Image preparation ----------
 
 function otsuSchwelle(grau) {
   const hist = new Int32Array(256);
@@ -205,17 +205,17 @@ function otsuSchwelle(grau) {
   return schwelle;
 }
 
-// true = dunkles Modul
+// true = dark module
 function binarisiere(grau, breite, hoehe) {
   const schwelle = otsuSchwelle(grau);
   const bits = new Uint8Array(breite * hoehe);
-  // "<=" statt "<": Bei reinen Schwarzweiß-Bildern (nur 0 und 255) liefert
-  // Otsu die Schwelle 0 — mit "<" wäre dann kein einziges Pixel dunkel.
+  // "<=" instead of "<": for pure black-and-white images (only 0 and 255)
+  // Otsu returns the threshold 0 — with "<" not a single pixel would be dark.
   for (let i = 0; i < bits.length; i += 1) bits[i] = grau[i] <= schwelle ? 1 : 0;
   return bits;
 }
 
-// ---------- Suchmuster finden ----------
+// ---------- Finding finder patterns ----------
 
 function findeSuchmuster(bits, breite, hoehe) {
   const kandidaten = [];
@@ -232,8 +232,8 @@ function findeSuchmuster(bits, breite, hoehe) {
       && Math.abs(z[4] - einheit) < tol;
   };
 
-  // Senkrechte Gegenprobe: am gefundenen Mittelpunkt muss dasselbe
-  // Verhaeltnis auch in der Spalte auftreten
+  // Vertical cross-check: at the centre found, the same ratio
+  // must also appear in the column
   const senkrechtBestaetigt = (mx, my, einheit) => {
     const x = Math.round(mx);
     if (x < 0 || x >= breite) return false;
@@ -255,7 +255,7 @@ function findeSuchmuster(bits, breite, hoehe) {
 
   for (let y = 0; y < hoehe; y += 1) {
     const z = [0, 0, 0, 0, 0];
-    let stand = 0; // 0..4, gerade = dunkel erwartet
+    let stand = 0; // 0..4, even = dark expected
     for (let x = 0; x < breite; x += 1) {
       const dunkel = bits[y * breite + x] === 1;
       const erwarteDunkel = stand % 2 === 0;
@@ -271,7 +271,7 @@ function findeSuchmuster(bits, breite, hoehe) {
         continue;
       }
 
-      // stand === 4 und Farbwechsel: Fenster auswerten
+      // stand === 4 and colour change: evaluate the window
       if (passt(z)) {
         const einheit = (z[0] + z[1] + z[2] + z[3] + z[4]) / 7;
         const mitteX = x - z[4] - z[3] - z[2] / 2;
@@ -279,12 +279,12 @@ function findeSuchmuster(bits, breite, hoehe) {
           kandidaten.push({ x: mitteX, y, groesse: einheit });
         }
       }
-      // Fenster um zwei Abschnitte verschieben
+      // Shift the window by two sections
       z[0] = z[2]; z[1] = z[3]; z[2] = z[4]; z[3] = 1; z[4] = 0;
       stand = 3;
     }
 
-    // Zeilenende
+    // End of line
     if (stand === 4 && passt(z)) {
       const einheit = (z[0] + z[1] + z[2] + z[3] + z[4]) / 7;
       const mitteX = breite - z[4] - z[3] - z[2] / 2;
@@ -294,7 +294,7 @@ function findeSuchmuster(bits, breite, hoehe) {
     }
   }
 
-  // Treffer zu Zentren buendeln
+  // Bundle hits into centres
   const zentren = [];
   for (const k of kandidaten) {
     let gefunden = false;
@@ -310,10 +310,10 @@ function findeSuchmuster(bits, breite, hoehe) {
       zentren.push({ x: k.x, y: k.y, groesse: k.groesse, summeX: k.x, summeY: k.y, summeG: k.groesse, n: 1 });
     }
   }
-  // Mittelpunkte nachjustieren: Der aus den Zeilentreffern gemittelte Punkt
-  // kann bei ungleichmäßig geschwärzten Scans um bis zu ein Modul daneben
-  // liegen. Der dunkle Kern des Suchmusters (3×3 Module) lässt sich genauer
-  // bestimmen — über den Schwerpunkt der zusammenhängenden dunklen Fläche.
+  // Readjust the centres: the point averaged from the row hits can be off
+  // by up to one module on unevenly blackened scans. The dark core of the
+  // finder pattern (3×3 modules) can be determined more precisely — via the
+  // centroid of the connected dark area.
   return zentren.filter((z) => z.n >= 2).map((z) => {
     const genau = kernSchwerpunkt(bits, breite, hoehe, z);
     return genau ? { ...z, x: genau.x, y: genau.y } : z;
@@ -321,18 +321,18 @@ function findeSuchmuster(bits, breite, hoehe) {
 }
 
 /**
- * Bestimmt den Schwerpunkt des dunklen Kerns eines Suchmusters.
- * Verfolgt die zusammenhängende dunkle Fläche um den Startpunkt; wird sie
- * unplausibel groß (mehr als der Kern), gilt die Justierung als gescheitert.
+ * Determines the centroid of the dark core of a finder pattern.
+ * Follows the connected dark area around the start point; if it becomes
+ * implausibly large (more than the core), the adjustment is considered failed.
  */
 function kernSchwerpunkt(bits, breite, hoehe, zentrum) {
   const sx = Math.round(zentrum.x);
   const sy = Math.round(zentrum.y);
   if (sx < 0 || sy < 0 || sx >= breite || sy >= hoehe) return null;
-  if (!bits[sy * breite + sx]) return null;   // Startpunkt nicht dunkel
+  if (!bits[sy * breite + sx]) return null;   // start point not dark
 
   const modul = zentrum.groesse || 3;
-  const grenze = Math.ceil(modul * 5) ** 2;   // Kern ist 3×3 Module
+  const grenze = Math.ceil(modul * 5) ** 2;   // the core is 3×3 modules
   const gesehen = new Set();
   const stapel = [[sx, sy]];
   let summeX = 0;
@@ -347,15 +347,15 @@ function kernSchwerpunkt(bits, breite, hoehe, zentrum) {
     if (!bits[schluessel]) continue;
     gesehen.add(schluessel);
     summeX += x; summeY += y; anzahl += 1;
-    if (anzahl > grenze) return null;         // Fläche zu groß — kein Kern
+    if (anzahl > grenze) return null;         // area too large — not a core
     stapel.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
   }
 
-  if (anzahl < modul * modul * 2) return null; // zu klein
+  if (anzahl < modul * modul * 2) return null; // too small
   return { x: summeX / anzahl, y: summeY / anzahl };
 }
 
-// Ordnet drei Zentren zu oben-links, oben-rechts, unten-links
+// Assigns three centres to top-left, top-right, bottom-left
 function ordneZentren(z) {
   const abstand = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const kombis = [[0, 1, 2], [1, 0, 2], [2, 0, 1]];
@@ -365,28 +365,28 @@ function ordneZentren(z) {
     if (best === null || d < best.d) best = { d, ecke: z[e], p1: z[a], p2: z[b] };
   }
   const { ecke, p1, p2 } = best;
-  // In Bildkoordinaten wächst y nach unten. Für oben-links → oben-rechts → unten-links
-  // ist das Kreuzprodukt positiv; dann ist p1 der Punkt oben rechts.
+  // In image coordinates y grows downwards. For top-left → top-right → bottom-left
+  // the cross product is positive; then p1 is the top-right point.
   const kreuz = (p1.x - ecke.x) * (p2.y - ecke.y) - (p1.y - ecke.y) * (p2.x - ecke.x);
   return kreuz > 0
     ? { obenLinks: ecke, obenRechts: p1, untenLinks: p2 }
     : { obenLinks: ecke, obenRechts: p2, untenLinks: p1 };
 }
 
-// ---------- Raster abtasten ----------
+// ---------- Sampling the grid ----------
 
 function schaetzeGroesse(ol, or_, ul) {
   const abstand = Math.hypot(or_.x - ol.x, or_.y - ol.y);
   const modul = (ol.groesse + or_.groesse + ul.groesse) / 3;
   const module = Math.round(abstand / modul) + 7;
-  // Auf gueltige Groesse runden (4k+17)
+  // Round to a valid size (4k+17)
   let n = Math.round((module - 17) / 4) * 4 + 17;
   if (n < 21) n = 21;
   if (n > 97) n = 97;
   return n;
 }
 
-// Sucht das Ausrichtungsmuster (1:1:1) in der Naehe einer erwarteten Stelle
+// Looks for the alignment pattern (1:1:1) near an expected position
 function findeAusrichtung(bits, breite, hoehe, erwartetX, erwartetY, modul) {
   const radius = Math.max(4, Math.round(modul * 4));
   const dunkel = (x, y) => (x >= 0 && y >= 0 && x < breite && y < hoehe && bits[y * breite + x] === 1);
@@ -399,7 +399,7 @@ function findeAusrichtung(bits, breite, hoehe, erwartetX, erwartetY, modul) {
       const x = Math.round(erwartetX + dx);
       if (!dunkel(x, y)) continue;
 
-      // Waagerecht: dunkel-hell-dunkel-hell-dunkel um den Mittelpunkt
+      // Horizontal: dark-light-dark-light-dark around the centre
       let links = 0; let i = x;
       while (dunkel(i, y)) { links += 1; i -= 1; }
       let rechts = 0; i = x + 1;
@@ -423,7 +423,7 @@ function findeAusrichtung(bits, breite, hoehe, erwartetX, erwartetY, modul) {
   return besteX === null ? null : { x: besteX, y: besteY };
 }
 
-// Projektive Abbildung aus vier Punktpaaren (Modulkoordinate → Bildkoordinate)
+// Projective mapping from four point pairs (module coordinate → image coordinate)
 function baueHomografie(quelle, ziel) {
   const A = [];
   const b = [];
@@ -433,7 +433,7 @@ function baueHomografie(quelle, ziel) {
     A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
     A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
   }
-  // Gauss-Elimination
+  // Gaussian elimination
   const n = 8;
   for (let i = 0; i < n; i += 1) {
     let max = i;
@@ -463,13 +463,13 @@ function tasteAb(bits, breite, hoehe, ol, or_, ul, groesse, mitAusrichtung = tru
   const modul = (ol.groesse + or_.groesse + ul.groesse) / 3;
   const version = (groesse - 17) / 4;
 
-  // Vierte Ecke: bevorzugt über das Ausrichtungsmuster, sonst rechnerisch
+  // Fourth corner: preferably via the alignment pattern, otherwise computed
   let abbildung = null;
   if (mitAusrichtung && version >= 2) {
-    // Affine Näherung aus den drei Suchmustern:
-    // Bildpunkt = OL + (u-3.5)/(n-7) * (OR-OL) + (v-3.5)/(n-7) * (UL-OL)
+    // Affine approximation from the three finder patterns:
+    // image point = TL + (u-3.5)/(n-7) * (TR-TL) + (v-3.5)/(n-7) * (BL-TL)
     const spanne = groesse - 7;
-    const zielModul = groesse - 6.5; // Mitte des unteren rechten Ausrichtungsmusters
+    const zielModul = groesse - 6.5; // centre of the bottom-right alignment pattern
     const t = (zielModul - 3.5) / spanne;
     const erwX = ol.x + t * (or_.x - ol.x) + t * (ul.x - ol.x);
     const erwY = ol.y + t * (or_.y - ol.y) + t * (ul.y - ol.y);
@@ -482,7 +482,7 @@ function tasteAb(bits, breite, hoehe, ol, or_, ul, groesse, mitAusrichtung = tru
     }
   }
   if (!abbildung) {
-    // Vierte Ecke: entweder vorgegeben (Feinkorrektur) oder als Parallelogramm geschätzt
+    // Fourth corner: either given (fine correction) or estimated as a parallelogram
     const urX = eckeUR ? eckeUR.x : or_.x + ul.x - ol.x;
     const urY = eckeUR ? eckeUR.y : or_.y + ul.y - ol.y;
     abbildung = baueHomografie(
@@ -492,7 +492,7 @@ function tasteAb(bits, breite, hoehe, ol, or_, ul, groesse, mitAusrichtung = tru
   }
   if (!abbildung) return null;
 
-  // Bei kleinen Modulen nicht mitteln — sonst fliessen Nachbarmodule ein
+  // Do not average for small modules — otherwise neighbouring modules leak in
   const radius = modul >= 5 ? 1 : 0;
 
   const matrix = [];
@@ -519,7 +519,7 @@ function tasteAb(bits, breite, hoehe, ol, or_, ul, groesse, mitAusrichtung = tru
   return matrix;
 }
 
-// ---------- Formatinformation ----------
+// ---------- Format information ----------
 
 const FORMAT_MASKE = 0x5412;
 
@@ -536,7 +536,7 @@ function dekodiereFormat(matrix, groesse) {
 
   for (const stellen of [kopie1, kopie2]) {
     const roh = lies(stellen) ^ FORMAT_MASKE;
-    // BCH(15,5): beste Übereinstimmung suchen
+    // BCH(15,5): find the best match
     let besteDistanz = 99; let bestesFormat = -1;
     for (let f = 0; f < 32; f += 1) {
       let code = f << 10;
@@ -570,7 +570,7 @@ const MASKEN = [
   (y, x) => (((y + x) % 2) + ((y * x) % 3)) % 2 === 0,
 ];
 
-// ---------- Funktionsbereiche markieren ----------
+// ---------- Marking function patterns ----------
 
 function baueFunktionskarte(groesse, version) {
   const karte = Array.from({ length: groesse }, () => new Uint8Array(groesse));
@@ -581,13 +581,13 @@ function baueFunktionskarte(groesse, version) {
       }
     }
   };
-  // Suchmuster samt Trennlinien und Formatbereich
+  // Finder patterns including separators and format area
   setze(0, 0, 9, 9);
   setze(groesse - 8, 0, 8, 9);
   setze(0, groesse - 8, 9, 8);
-  // Taktspuren
+  // Timing patterns
   for (let i = 0; i < groesse; i += 1) { karte[6][i] = 1; karte[i][6] = 1; }
-  // Ausrichtungsmuster
+  // Alignment patterns
   const positionen = ausrichtungsPositionen(version);
   for (const py of positionen) {
     for (const px of positionen) {
@@ -596,7 +596,7 @@ function baueFunktionskarte(groesse, version) {
       setze(px - 2, py - 2, 5, 5);
     }
   }
-  // Versionsinformation ab Version 7
+  // Version information from version 7
   if (version >= 7) {
     setze(groesse - 11, 0, 3, 6);
     setze(0, groesse - 11, 6, 3);
@@ -616,7 +616,7 @@ function ausrichtungsPositionen(version) {
   return positionen.sort((a, b) => a - b);
 }
 
-// ---------- Datenbits auslesen ----------
+// ---------- Reading the data bits ----------
 
 function leseCodewoerter(matrix, groesse, version, maske) {
   const karte = baueFunktionskarte(groesse, version);
@@ -625,7 +625,7 @@ function leseCodewoerter(matrix, groesse, version, maske) {
   let aufwaerts = true;
 
   for (let rechts = groesse - 1; rechts >= 1; rechts -= 2) {
-    if (rechts === 6) rechts -= 1; // Taktspur überspringen
+    if (rechts === 6) rechts -= 1; // skip timing pattern
     for (let i = 0; i < groesse; i += 1) {
       const y = aufwaerts ? groesse - 1 - i : i;
       for (let s = 0; s < 2; s += 1) {
@@ -648,7 +648,7 @@ function leseCodewoerter(matrix, groesse, version, maske) {
   return codewoerter;
 }
 
-// ---------- Blöcke entflechten und korrigieren ----------
+// ---------- De-interleaving and correcting blocks ----------
 
 function entflechteUndKorrigiere(codewoerter, version, stufe) {
   const eintrag = EC_TABELLE[version];
@@ -659,7 +659,7 @@ function entflechteUndKorrigiere(codewoerter, version, stufe) {
   for (let i = 0; i < bloecke1; i += 1) bloecke.push({ laenge: laenge1, daten: [] });
   for (let i = 0; i < bloecke2; i += 1) bloecke.push({ laenge: laenge2, daten: [] });
 
-  // Datenteil spaltenweise verteilt
+  // Data part distributed column by column
   let pos = 0;
   const maxLaenge = Math.max(laenge1, laenge2 || 0);
   for (let i = 0; i < maxLaenge; i += 1) {
@@ -667,7 +667,7 @@ function entflechteUndKorrigiere(codewoerter, version, stufe) {
       if (i < b.laenge) { b.daten.push(codewoerter[pos]); pos += 1; }
     }
   }
-  // Fehlerkorrekturteil ebenso
+  // Error correction part likewise
   const ecTeile = bloecke.map(() => []);
   for (let i = 0; i < ecProBlock; i += 1) {
     for (let b = 0; b < bloecke.length; b += 1) {
@@ -685,7 +685,7 @@ function entflechteUndKorrigiere(codewoerter, version, stufe) {
   return [].concat(...ergebnis);
 }
 
-// ---------- Nutzdaten auswerten ----------
+// ---------- Evaluating the payload ----------
 
 function leseNutzdaten(daten, version) {
   let bitPos = 0;
@@ -712,14 +712,14 @@ function leseNutzdaten(daten, version) {
   for (let schutz = 0; schutz < 32; schutz += 1) {
     if (bitPos + 4 > daten.length * 8) break;
     const modus = lies(4);
-    if (modus === 0) break; // Ende
+    if (modus === 0) break; // end
     const anzahlBits = zeichenAnzahlBits(modus);
     if (!anzahlBits) break;
     const anzahl = lies(anzahlBits);
 
-    if (modus === 4) { // Byte
+    if (modus === 4) { // byte
       for (let i = 0; i < anzahl; i += 1) bytes.push(lies(8));
-    } else if (modus === 2) { // Alphanumerisch
+    } else if (modus === 2) { // alphanumeric
       let i = 0;
       while (i + 1 < anzahl) {
         const paar = lies(11);
@@ -727,18 +727,18 @@ function leseNutzdaten(daten, version) {
         i += 2;
       }
       if (i < anzahl) text += ALPHANUMERISCH[lies(6)];
-    } else if (modus === 1) { // Numerisch
+    } else if (modus === 1) { // numeric
       let i = 0;
       while (i + 2 < anzahl) { text += String(lies(10)).padStart(3, '0'); i += 3; }
       if (anzahl - i === 2) text += String(lies(7)).padStart(2, '0');
       else if (anzahl - i === 1) text += String(lies(4));
     } else {
-      break; // ECI o. Ä. wird nicht unterstützt
+      break; // ECI or similar is not supported
     }
   }
 
   if (bytes.length) {
-    // UTF-8 versuchen, sonst Latin-1
+    // Try UTF-8, otherwise Latin-1
     const puffer = Buffer.from(bytes);
     const alsUtf8 = puffer.toString('utf8');
     text = alsUtf8.includes('\uFFFD') ? puffer.toString('latin1') : alsUtf8 + text;
@@ -746,18 +746,18 @@ function leseNutzdaten(daten, version) {
   return text;
 }
 
-// ---------- Gesamtablauf ----------
+// ---------- Overall process ----------
 
 /**
- * Sucht einen QR-Code in einem Graustufenbild.
- * @returns {string|null} Inhalt oder null
+ * Looks for a QR code in a greyscale image.
+ * @returns {string|null} content or null
  */
 function leseQr(grau, breite, hoehe) {
   const bits = binarisiere(grau, breite, hoehe);
   const zentren = findeSuchmuster(bits, breite, hoehe);
   if (zentren.length < 3) return null;
 
-  // Alle Dreierkombinationen der stärksten Kandidaten probieren
+  // Try all combinations of three of the strongest candidates
   const sortiert = zentren.sort((a, b) => b.n - a.n).slice(0, 6);
   for (let a = 0; a < sortiert.length; a += 1) {
     for (let b = a + 1; b < sortiert.length; b += 1) {
@@ -776,7 +776,7 @@ function versucheDrei(bits, breite, hoehe, drei) {
   const { obenLinks, obenRechts, untenLinks } = geordnet;
 
   const basis = schaetzeGroesse(obenLinks, obenRechts, untenLinks);
-  // Benachbarte Größen mitprobieren, falls die Schätzung danebenlag
+  // Also try neighbouring sizes in case the estimate was off
   for (const groesse of [basis, basis + 4, basis - 4]) {
     if (groesse < 21 || groesse > 97) continue;
     const version = (groesse - 17) / 4;
@@ -793,16 +793,16 @@ function versucheDrei(bits, breite, hoehe, drei) {
       return text && text.length > 0 ? text : null;
     };
 
-    // Mit und ohne Ausrichtungsmuster abtasten — je nach Scan ist mal das
-    // eine, mal das andere genauer.
+    // Sample with and without the alignment pattern — depending on the scan,
+    // one or the other is more accurate.
     for (const mitAusrichtung of [true, false]) {
       const treffer = versuchen(tasteAb(bits, breite, hoehe, obenLinks, obenRechts, untenLinks, groesse, mitAusrichtung));
       if (treffer) return treffer;
     }
 
-    // Feinkorrektur: Gescannte Seiten sind oft leicht perspektivisch verzerrt.
-    // Dann liegt die vierte Ecke nicht dort, wo ein Parallelogramm sie hätte.
-    // Die Umgebung wird in kleinen Schritten abgesucht.
+    // Fine correction: scanned pages are often slightly distorted in perspective.
+    // Then the fourth corner is not where a parallelogram would put it.
+    // The surroundings are searched in small steps.
     const modul = (obenLinks.groesse + obenRechts.groesse + untenLinks.groesse) / 3;
     const basisX = obenRechts.x + untenLinks.x - obenLinks.x;
     const basisY = obenRechts.y + untenLinks.y - obenLinks.y;
@@ -810,7 +810,7 @@ function versucheDrei(bits, breite, hoehe, drei) {
     for (let ring = 1; ring <= 6; ring += 1) {
       for (let dy = -ring; dy <= ring; dy += 1) {
         for (let dx = -ring; dx <= ring; dx += 1) {
-          // Nur den äußeren Rand des jeweiligen Rings prüfen
+          // Only check the outer edge of each ring
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
           const treffer = versuchen(tasteAb(
             bits, breite, hoehe, obenLinks, obenRechts, untenLinks, groesse, false,

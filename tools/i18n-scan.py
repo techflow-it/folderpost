@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 TechFlow IT
 """
-i18n-scan.py — Abnahmetest: Ist die englische Oberfläche wirklich vollständig englisch?
+i18n-scan.py — acceptance test: is the user interface completely in one language?
 
-Startet die Anwendung in einer temporären Kopie (der Projektordner bleibt unberührt),
-legt Demodaten an, schaltet die Oberfläche auf Englisch und durchläuft alle Ansichten.
-Jeder sichtbare Text, jeder Platzhalter, Tooltip und aria-label wird auf deutsche
-Wörter und Umlaute geprüft.
+Starts the application in a temporary copy (the project folder stays untouched),
+creates demo data, switches the interface to the chosen language and walks through
+all views. Every visible text, placeholder, tooltip and aria-label is checked for
+words of the other language.
 
-Aufruf (im Projektordner):
+Usage (in the project folder):
     pip3 install playwright && python3 -m playwright install chromium
-    python3 tools/i18n-scan.py            # prüft den aktuellen Ordner
-    APP_DIR=/pfad/zum/projekt python3 tools/i18n-scan.py
+    python3 tools/i18n-scan.py              # English interface: no German allowed
+    python3 tools/i18n-scan.py --lang de    # German interface: no English allowed
+    APP_DIR=/path/to/project python3 tools/i18n-scan.py
 
-Exit-Code 0 = nichts Deutsches gefunden, 1 = Funde (für CI geeignet).
+Exit code 0 = no findings, 1 = findings (suitable for CI).
 
-Hinweis: Der Test liest den gesamten DOM, auch aktuell verdeckte Dialoge. Die Ansichten
-werden trotzdem durchgeklickt, weil viele Texte erst beim Öffnen erzeugt werden
-(Statistik, Job-Details, Menüs, Meldungen).
+Note: the test reads the whole DOM, including dialogs that are currently hidden.
+The views are clicked through anyway, because many texts are only created when
+they are opened (statistics, job details, menus, messages).
 """
 import os, re, shutil, subprocess, sys, tempfile, time, json, signal
 from playwright.sync_api import sync_playwright
@@ -26,7 +29,9 @@ PORT = int(os.environ.get("PORT", "3999"))
 NODE = os.environ.get("NODE", "node")
 START = os.environ.get("START_FILE", "server.js")
 
-# Deutsche Signalwörter + Umlaute. "Scan", "Status", "Job" usw. sind absichtlich NICHT enthalten.
+LANG = "de" if "--lang" in sys.argv and sys.argv[sys.argv.index("--lang") + 1:][:1] == ["de"] else "en"
+
+# German signal words and umlauts. "Scan", "Status", "Job" etc. are deliberately NOT included.
 DE = re.compile(
     r"[äöüÄÖÜß]|\b(der|die|das|und|nicht|wird|werden|für|mit|bei|eine|einen|oder|dass|noch|keine|kein|"
     r"Datei|Dateien|Ordner|Einstellungen|Fehler|Übertragung|Übertragungen|Schnittstelle|Zeitraum|"
@@ -35,7 +40,17 @@ DE = re.compile(
     r"Tage|Alle|Nur|Jetzt|nächster|Quelle|Quell|Ziel|ausgewählt|Wiederholung|Quarantäne)\b",
     re.I,
 )
-TECHNISCH = re.compile(r"[A-Za-z0-9_.{}<>/:\\-]+")  # reine Bezeichner/Pfade ignorieren
+# English signal words for the German interface. Words that are also common in German
+# technical language (Job, Status, Export, Import, Test, Name, Details, Webhook …) are left out.
+EN = re.compile(
+    r"\b(the|and|with|for|not|is|are|be|will|this|that|from|only|please|ago|selected|"
+    r"file|files|folder|folders|settings|save|cancel|close|delete|error|errors|transfer|transfers|"
+    r"password|user|users|sign|days|hours|minutes|never|none|show|hide|new|open|when|after|before|"
+    r"until|of|on|at|by|yes|no|running|paused|success|failed|period|attempts|subfolder)\b",
+    re.I,
+)
+FOREIGN = EN if LANG == "de" else DE
+TECHNISCH = re.compile(r"[A-Za-z0-9_.{}<>/:\\-]+")  # ignore plain identifiers and paths
 
 
 def demo_config(port):
@@ -57,7 +72,7 @@ def demo_config(port):
         dict(name="Orders", category="Sales", sourcePath="/nonexistent/a", filePattern="*.xml"),
         dict(name="Scans", category="Lab", sourcePath="/nonexistent/b", processor="pdf-qr-json",
              stapelTeilen=True, sendeFormat="multipart-metadata"),
-        dict(name="Paused", category="Lab", sourcePath="/nonexistent/c", active=False),
+        dict(name="Nightly", category="Lab", sourcePath="/nonexistent/c", active=False),
         dict(name="Mailer", sourcePath="/nonexistent/d", zielTyp="email", mailAn="a@example.org", smtpHost="smtp.example.org"),
         dict(name="Dry", sourcePath="/nonexistent/e", dryRun=True),
     ]
@@ -66,7 +81,7 @@ def demo_config(port):
         "port": port, "globalPollIntervalSec": 600, "jobs": jobs, "templates": [],
         "settings": {"logRetentionDays": 90, "jobUebersichtImLogin": True, "updatePruefUrl": "",
                      "letzteUpdatePruefung": None, "neustartVerhalten": "selbst", "logoDatenUrl": "",
-                     "akzentFarbe": "", "anzeigeName": "", "benutzer": []},
+                     "akzentFarbe": "", "anzeigeName": "", "benutzer": [], "language": LANG},
     }
 
 
@@ -112,7 +127,8 @@ def main():
           return [...new Set(out)];
         }""")
         for t in texte:
-            if DE.search(t) and not TECHNISCH.fullmatch(t):
+            value = t.split(": ", 1)[1] if t.startswith(("@", "option: ")) else t
+            if FOREIGN.search(t) and not TECHNISCH.fullmatch(value):
                 fund.setdefault(t, ort)
 
     def sicher(fn):
@@ -122,8 +138,8 @@ def main():
     try:
         with sync_playwright() as p:
             b = p.chromium.launch()
-            c = b.new_context(viewport={"width": 1400, "height": 1000}, locale="en-US")
-            c.add_init_script("localStorage.setItem('sprache','en'); localStorage.setItem('language','en');")
+            c = b.new_context(viewport={"width": 1400, "height": 1000}, locale="de-DE" if LANG == "de" else "en-US")
+            c.add_init_script(f"localStorage.setItem('sprache','{LANG}'); localStorage.setItem('language','{LANG}');")
             pg = c.new_page()
             pg.goto(f"http://localhost:{PORT}", wait_until="networkidle"); pg.wait_for_timeout(3000)
             sammle(pg, "Overview")
@@ -153,7 +169,7 @@ def main():
             sicher(lambda: (pg.keyboard.press("Control+k"), pg.wait_for_timeout(300), sammle(pg, "Command palette"), pg.keyboard.press("Escape")))
             sicher(lambda: (pg.evaluate("() => { const m = document.querySelector('.job-card [data-action=\"menu\"]'); if (m) m.click(); }"),
                             pg.wait_for_timeout(300), sammle(pg, "Job menu")))
-            # Anmeldeseite (nur sichtbar, wenn Benutzer existieren — hier als statische Seite geprüft)
+            # Sign-in page (only shown when users exist — checked here as a static page)
             sicher(lambda: (pg.goto(f"http://localhost:{PORT}/anmelden.html", wait_until="networkidle"), pg.wait_for_timeout(800), sammle(pg, "Sign-in page")))
             b.close()
     finally:
@@ -162,7 +178,10 @@ def main():
         except Exception: srv.kill()
         shutil.rmtree(work, ignore_errors=True)
 
-    print(f"Deutsche Texte in der englischen Oberfläche: {len(fund)}")
+    if LANG == "de":
+        print(f"English texts in the German interface: {len(fund)}")
+    else:
+        print(f"German texts in the English interface: {len(fund)}")
     for t, ort in sorted(fund.items(), key=lambda x: (x[1], x[0])):
         print(f"  [{ort}] {t[:120]}")
     sys.exit(1 if fund else 0)

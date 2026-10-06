@@ -1,5 +1,5 @@
 :root {
-  /* Warmes Neutralgrau statt tiefem Blauschwarz — geringerer Kontrast, ruhigeres Bild */
+  /* Warm neutral grey instead of deep blue-black — lower contrast, calmer look */
   --bg: #1B1B1D;
   --bg-elevated: #212124;
   --bg-card: #26262A;
@@ -17,9 +17,9 @@
   --error: #E07C72;
   --error-dim: #E07C7226;
   --warning: #D6A45E;
-  /* Nur Schriften, die auf dem Rechner vorhanden sind — nichts wird aus
-     dem Internet nachgeladen. So bleibt die Anwendung ohne Netzverbindung
-     lauffähig, und die Browser der Anwender senden keine Daten an Dritte. */
+  /* Only fonts that are installed on the computer — nothing is loaded from
+     the internet. The application keeps working without a network connection,
+     and the users' browsers send no data to third parties. */
   --font-mono: Consolas, 'Cascadia Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
   --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --radius: 10px;
@@ -143,7 +143,7 @@ a { color: var(--accent); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: rise 0.2s ease both; }
 
-/* ---------- Reiter innerhalb der Einstellungen ---------- */
+/* ---------- Tabs inside the settings ---------- */
 
 #settings-backdrop .settings-sticky-kopf {
   position: sticky; top: 0; z-index: 2; background: var(--bg-card); border-radius: 12px 12px 0 0;
@@ -317,7 +317,7 @@ select {
 .job-actions { display: flex; gap: 6px; margin-top: 11px; flex-wrap: wrap; }
 .job-actions .btn { padding: 6px 10px; font-size: 12px; }
 
-/* ---------- Überlaufmenü ---------- */
+/* ---------- Overflow menu ---------- */
 
 .overflow-wrap { position: relative; }
 .overflow-menu {
@@ -335,7 +335,7 @@ select {
 .menu-item.checked .check { opacity: 1; }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 
-/* ---------- Dateivorschau im Formular ---------- */
+/* ---------- File preview in the form ---------- */
 
 .preview-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .preview-row #preview-result { font-size: 12.5px; font-family: var(--font-mono); color: var(--text-dim); }
@@ -352,7 +352,7 @@ select {
 .preview-list .pv-note { color: var(--warning); padding-top: 6px; display: block; }
 .preview-list .pv-skip { color: var(--error); }
 
-/* ---------- Sammelaktionen ---------- */
+/* ---------- Bulk actions ---------- */
 
 .bulk-bar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -378,7 +378,7 @@ select {
 }
 .drag-handle:hover { color: var(--accent); }
 
-/* ---------- Kategorien verwalten ---------- */
+/* ---------- Manage categories ---------- */
 
 .categories-list { display: flex; flex-direction: column; gap: 8px; }
 .category-row { display: flex; align-items: center; gap: 8px; }
@@ -389,14 +389,14 @@ select {
 .category-row .cat-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); min-width: 34px; }
 .category-row .btn { padding: 6px 10px; font-size: 12px; }
 
-/* ---------- Detailansicht als Spalte auf breiten Bildschirmen ---------- */
+/* ---------- Detail view as a column on wide screens ---------- */
 
 @media (min-width: 1500px) {
   .layout.with-detail { grid-template-columns: minmax(300px, 1fr) minmax(320px, 1fr) minmax(320px, 0.95fr); }
   .layout.with-detail .detail-column { display: block; }
   .drawer-backdrop.docked { display: none !important; }
 }
-/* ---------- Zustands-Aufschlüsselung in Kacheln ---------- */
+/* ---------- State breakdown in tiles ---------- */
 
 .state-breakdown { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; }
 .state-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--text-dim); font-family: var(--font-mono); }
@@ -408,7 +408,7 @@ select {
 .state-chip.schedule i { background: var(--warning); }
 .state-chip.idle i { background: var(--success); }
 
-/* ---------- Kategorie-Filterleiste ---------- */
+/* ---------- Category filter bar ---------- */
 
 .category-bar { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 28px 14px; }
 .category-pill {
@@ -424,7 +424,7 @@ select {
 .category-pill .warn { color: var(--error); font-size: 11px; }
 .category-pill.active .warn { color: #4A1E12; }
 
-/* ---------- Gruppierung ---------- */
+/* ---------- Grouping ---------- */
 
 .job-group-head {
   display: flex; align-items: center; gap: 9px; padding: 12px 4px 6px;
@@ -445,7 +445,7 @@ select {
   text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--font-sans);
 }
 
-/* ---------- Kompakte Ansicht ---------- */
+/* ---------- Compact view ---------- */
 
 .jobs-list.compact .job-card { padding: 9px 12px; }
 .jobs-list.compact .job-meta:nth-of-type(2),
@@ -483,7 +483,7 @@ select {
 .download-btn { text-decoration: none; color: var(--text-dim); border-color: var(--border); }
 .download-btn:hover { color: var(--accent); background: var(--accent-dim); }
 
-/* ---------- Konfigurations-Sicherungen ---------- */
+/* ---------- Configuration backups ---------- */
 
 .backup-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
 .backup-row {
@@ -523,7 +523,7 @@ select {
   padding: 18px 20px; display: flex; flex-direction: column; gap: 20px;
   flex: 1; overflow-y: auto; min-height: 0;
 }
-/* Im Detailbereich soll der gesamte Inhalt mitscrollen, kein zweiter Scrollbereich */
+/* In the detail area the whole content scrolls, no second scroll area */
 .drawer-body .log-stream,
 .detail-column .log-stream {
   max-height: none; overflow-y: visible; padding: 0;
@@ -543,7 +543,7 @@ select {
 }
 .copy-btn:hover { color: var(--accent); background: var(--bg-card-hover); }
 
-/* ---------- Selbstdiagnose-Banner ---------- */
+/* ---------- Self-check banner ---------- */
 
 .selfcheck-banner {
   margin: 0 28px 16px; padding: 12px 16px; border-radius: var(--radius);
@@ -558,7 +558,7 @@ select {
   cursor: pointer; font-size: 17px; line-height: 1; padding: 0 2px;
 }
 
-/* ---------- Optionsblöcke im Formular ---------- */
+/* ---------- Option blocks in the form ---------- */
 
 .option-block {
   background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -571,7 +571,7 @@ select {
 .option-row input { width: auto; margin-top: 1px; flex-shrink: 0; accent-color: var(--accent); }
 .option-row strong { color: var(--text); font-weight: 600; }
 
-/* ---------- Vorlagen ---------- */
+/* ---------- Templates ---------- */
 
 .template-row {
   display: flex; gap: 9px; align-items: center;
@@ -579,7 +579,7 @@ select {
 }
 .template-row select { flex: 1; }
 
-/* ---------- Änderungsprotokoll ---------- */
+/* ---------- Change log ---------- */
 
 .audit-list { max-height: 420px; overflow-y: auto; font-size: 12.5px; }
 .audit-row { display: flex; gap: 11px; padding: 9px 2px; border-bottom: 1px solid var(--border); align-items: baseline; }
@@ -595,7 +595,7 @@ select {
 .audit-text { color: var(--text); word-break: break-word; }
 .audit-text .fields { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
 
-/* ---------- Testmodus-Kennzeichnung ---------- */
+/* ---------- Test mode marker ---------- */
 
 .dryrun-badge {
   display: inline-flex; align-items: center; background: var(--warning); color: #221A0E;
@@ -603,7 +603,7 @@ select {
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 
-/* ---------- Konfigurations-Warnungen ---------- */
+/* ---------- Configuration warnings ---------- */
 
 .warning-banner {
   margin: 0 28px 16px; padding: 12px 16px; border-radius: var(--radius);
@@ -624,7 +624,7 @@ select {
   cursor: pointer; font-size: 17px; line-height: 1; padding: 0 2px;
 }
 
-/* ---------- Notizen ---------- */
+/* ---------- Notes ---------- */
 
 .job-note {
   margin-top: 8px; padding: 7px 10px; border-radius: var(--radius-sm);
@@ -633,7 +633,7 @@ select {
 }
 .note-icon { color: var(--text-faint); flex-shrink: 0; }
 
-/* ---------- Archiv ---------- */
+/* ---------- Archive ---------- */
 
 .archived-badge {
   display: inline-flex; align-items: center; background: var(--bg-inset);
@@ -666,7 +666,7 @@ select {
 .confirm-body p { color: var(--text-dim); font-size: 13.5px; margin: 0 0 16px; }
 .job-form { padding: 18px 20px; display: flex; flex-direction: column; gap: 13px; }
 .job-form label { font-size: 12.5px; color: var(--text-dim); display: flex; flex-direction: column; gap: 5px; }
-/* Einheitliche Eingabefelder in allen Dialogen — nicht nur im Job-Formular */
+/* Uniform input fields in all dialogs — not only in the job form */
 .job-form input, .job-form select, .job-form textarea,
 .confirm-body input, .confirm-body select, .confirm-body textarea {
   background: var(--bg-inset); color: var(--text); border: 1px solid var(--border);
@@ -679,7 +679,7 @@ select {
   outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
 }
 .job-form input::placeholder, .confirm-body input::placeholder { color: var(--text-faint); }
-/* Ankreuzfelder und Schmalfelder von der Vollbreite ausnehmen */
+/* Exclude checkboxes and narrow fields from full width */
 .confirm-body input[type="checkbox"], .job-form input[type="checkbox"],
 .confirm-body input[type="radio"], .job-form input[type="radio"] { width: auto; }
 .confirm-body input[style*="width"] { width: auto; }
@@ -713,14 +713,14 @@ select {
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .hidden { display: none !important; }
 
-/* ---------- Statistik ---------- */
+/* ---------- Statistics ---------- */
 
 .stats-toolbar { display: flex; align-items: center; gap: 12px; padding: 6px 28px 16px; }
 .stats-toolbar-hint { margin: 0 auto 0 0; font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
 .stats-range-pills { display: flex; gap: 6px; }
 .stats-range-pills .category-pill { padding: 6px 12px; }
 
-/* ---------- Schnellzugriff (Strg+K) ---------- */
+/* ---------- Command palette (Ctrl+K) ---------- */
 
 .palette-modal { max-width: 560px; padding: 0; overflow: hidden; }
 .palette-input-row {
@@ -754,7 +754,7 @@ select {
 }
 .kpi-value { font-family: var(--font-mono); font-size: 25px; font-weight: 700; }
 .kpi-trend { font-family: var(--font-mono); font-size: 11px; font-weight: 600; min-height: 14px; }
-.kpi-trend:empty::before { content: '\00a0'; } /* hält die Kartenhöhe stabil, auch ohne Vergleichswert */
+.kpi-trend:empty::before { content: '\00a0'; } /* keeps the card height stable, even without a comparison value */
 .trend-gut { color: var(--success); }
 .trend-schlecht { color: var(--error); }
 .trend-neutral { color: var(--text-faint); }
@@ -828,7 +828,7 @@ select {
   .job-card, .log-entry, .drawer, .modal, .toast { animation: none; }
 }
 
-/* ---------- Werkzeug-Diagnose ---------- */
+/* ---------- Tool diagnosis ---------- */
 
 .tools-result { display: flex; flex-direction: column; gap: 8px; }
 .tool-row {
@@ -849,7 +849,7 @@ select {
 .tool-row details ul { margin: 6px 0 0; padding-left: 16px; }
 .tool-row details li { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); word-break: break-all; margin-bottom: 2px; }
 
-/* ---------- Aufklappbare Formular-Abschnitte ---------- */
+/* ---------- Collapsible form sections ---------- */
 
 .form-section {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -873,11 +873,11 @@ select {
 .form-section > *:not(summary) { margin-left: 12px; margin-right: 12px; }
 .form-section > *:not(summary):last-child { margin-bottom: 12px; }
 .form-section[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
-/* Abschnitt hervorheben, wenn er von den Standardwerten abweicht */
+/* Highlight a section if it differs from the defaults */
 .form-section.geaendert > summary { color: var(--accent); }
 .form-section.geaendert > summary .sec-hint::after { content: ' • angepasst'; color: var(--accent); }
 
-/* ---------- Benutzer & Anmeldung ---------- */
+/* ---------- Users & sign-in ---------- */
 
 .benutzer-anzeige { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
 .benutzer-anzeige #benutzer-name { font-weight: 600; color: var(--text); }
@@ -900,7 +900,7 @@ select {
 #benutzer-ergebnis.error { color: var(--error); }
 .audit-user { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; }
 
-/* ---------- Umwandlungs-Kennzeichnung ---------- */
+/* ---------- Conversion marker ---------- */
 
 .umwandlung-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -909,7 +909,7 @@ select {
   text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
 }
 
-/* ---------- Einklappbare Hinweise ---------- */
+/* ---------- Collapsible hints ---------- */
 
 .warning-banner > summary {
   cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
@@ -924,7 +924,7 @@ select {
 .warning-banner[open] .banner-aktion { display: none; }
 .warning-banner .dismiss { float: none; font-size: 11.5px; padding: 5px 10px; }
 
-/* ---------- Probelauf im Job-Formular ---------- */
+/* ---------- Trial run in the job form ---------- */
 
 .probelauf-block {
   background: var(--bg-inset); border: 1px solid var(--border);
@@ -943,7 +943,7 @@ select {
 .probe-zeile { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 .probe-zeile strong { color: var(--text); }
 
-/* ---------- Rollenhinweis ---------- */
+/* ---------- Role hint ---------- */
 
 .nur-verwaltung-hinweis {
   background: var(--bg-inset); border: 1px solid var(--border);
@@ -952,10 +952,10 @@ select {
   font-size: 12.5px; color: var(--text-dim); margin-bottom: 12px;
 }
 .btn[disabled], .btn-icon[disabled] { opacity: 0.45; cursor: not-allowed; }
-/* Sammelaktion "Löschen" für Benutzer ohne Verwaltungsrolle ausblenden */
+/* Hide the bulk action "Delete" for users without the administrator role */
 body.nur-benutzer .bulk-bar [data-bulk="delete"] { display: none; }
 
-/* Betrachter: alle verändernden Bedienelemente ausblenden */
+/* Viewer: hide all controls that change something */
 body.nur-lesen .job-actions,
 body.nur-lesen .bulk-bar,
 body.nur-lesen #btn-toggle-select,
@@ -964,7 +964,7 @@ body.nur-lesen #btn-reset-stats { display: none !important; }
 body.nur-lesen .job-card { cursor: pointer; }
 body.nur-lesen #btn-new-job { display: none !important; }
 
-/* ---------- Aktuell bearbeitete Datei ---------- */
+/* ---------- File currently being processed ---------- */
 
 .in-arbeit {
   display: flex; align-items: center; gap: 9px; margin-top: 8px;
@@ -983,10 +983,10 @@ body.nur-lesen #btn-new-job { display: none !important; }
 .arbeit-dauer { font-family: var(--font-mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .arbeit-spinner { animation: none; } }
 
-/* In der Kompaktansicht sichtbar lassen — genau dort ist sie nützlich */
+/* Keep it visible in the compact view — that is exactly where it is useful */
 .jobs-list.compact .in-arbeit { display: flex; }
 
-/* ---------- Warteschlange ---------- */
+/* ---------- Queue ---------- */
 
 .warte-gruppe { margin-bottom: 16px; }
 .warte-titel {
@@ -1006,17 +1006,17 @@ body.nur-lesen #btn-new-job { display: none !important; }
 .warte-datei .btn { padding: 4px 9px; font-size: 11.5px; }
 .warte-mehr { font-size: 11.5px; color: var(--text-faint); margin: 4px 0 0; }
 
-/* ---------- Aktualisierung ---------- */
+/* ---------- Updates ---------- */
 
 .update-stand { margin-bottom: 4px; }
 #update-ergebnis.ok { color: var(--success); }
 #update-ergebnis.error { color: var(--error); }
 
-/* ---------- Kopfzeile ---------- */
+/* ---------- Header ---------- */
 
 #brand-titel { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 
-/* Lange Beispiele im Hinweistext umbrechen statt überlaufen lassen */
+/* Wrap long examples in the hint text instead of letting them overflow */
 .confirm-body .field-hint code,
 .job-form .field-hint code {
   word-break: break-all; overflow-wrap: anywhere;
@@ -1025,11 +1025,11 @@ body.nur-lesen #btn-new-job { display: none !important; }
 }
 /* Leerhinweise in Dialogen kompakter */
 .confirm-body .chart-empty { padding: 14px 12px; margin: 0; }
-/* Abschnittsabstände in den Einstellungen vereinheitlichen */
+/* Unify section spacing in the settings */
 #settings-backdrop .drawer-section-title { margin: 22px 0 8px !important; }
 #settings-backdrop .drawer-section-title:first-child { margin-top: 0 !important; }
 
-/* ---------- Erscheinungsbild ---------- */
+/* ---------- Appearance ---------- */
 
 .marken-vorschau {
   display: flex; align-items: center; gap: 12px;
@@ -1056,16 +1056,16 @@ body.nur-lesen #btn-new-job { display: none !important; }
 #marke-ergebnis.error { color: var(--error); }
 input[type="file"] { font-size: 12px; padding: 7px !important; }
 
-/* Kundenlogo in der Kopfzeile */
+/* Custom logo in the header */
 .brand-mark.hat-logo { background: transparent; border-color: var(--border); overflow: hidden; padding: 3px; }
 .brand-mark.hat-logo .brand-mark-dot { display: none; }
 .brand-mark img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 /* ============================================================
-   Gestaltungsüberarbeitung — ruhigere Flächen, weniger Rahmen
+   Design revision — calmer surfaces, fewer borders
    ============================================================ */
 
-/* ---------- Meldungsbereich ---------- */
+/* ---------- Message area ---------- */
 
 .meldungen { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
 .meldungen:empty { display: none; }
@@ -1085,14 +1085,14 @@ input[type="file"] { font-size: 12px; padding: 7px !important; }
 .selfcheck-banner ul, .warning-banner ul { margin: 10px 0 0; padding-left: 18px; }
 .selfcheck-banner li, .warning-banner li { margin-bottom: 5px; line-height: 1.5; }
 
-/* ---------- Schriftgrößen vereinheitlicht ----------
+/* ---------- Unified font sizes ----------
    xs 11px · s 12.5px · m 13.5px · l 15px · xl 19px            */
 
 .stat-label, .drawer-section-title, .warte-titel, .abschnitt { font-size: 11px; }
 .job-meta, .field-hint, .log-msg { font-size: 12.5px; }
 .job-name { font-size: 15px; }
 
-/* ---------- Job-Karten kompakter ---------- */
+/* ---------- More compact job cards ---------- */
 
 .job-card { transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease; }
 .job-meta.pfad-zeile {
@@ -1102,7 +1102,7 @@ input[type="file"] { font-size: 12px; padding: 7px !important; }
 .job-meta.pfad-zeile .pfad { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .job-meta.pfad-zeile .job-arrow { flex-shrink: 0; }
 
-/* Aktionen erst beim Überfahren zeigen — auf Touch-Geräten immer */
+/* Show actions only on hover — always on touch devices */
 .job-actions { transition: opacity 0.16s ease; }
 @media (hover: hover) and (min-width: 900px) {
   .job-card .job-actions { opacity: 0.35; }
@@ -1110,20 +1110,20 @@ input[type="file"] { font-size: 12px; padding: 7px !important; }
   .job-card:focus-within .job-actions { opacity: 1; }
 }
 
-/* Jobs mit Fehlerserie deutlich hervorheben */
+/* Clearly highlight jobs with a series of errors */
 .job-card.dringend {
   border-color: var(--error);
   background: linear-gradient(180deg, var(--error-dim) 0%, transparent 60%), var(--bg-card);
 }
 
-/* ---------- Weniger Rahmen ---------- */
+/* ---------- Fewer borders ---------- */
 
 .stat-tile { border-color: transparent; background: var(--bg-card); }
 .stat-tile:hover { border-color: var(--border); }
 .log-entry { border-bottom: 1px solid var(--border); }
 .log-entry:last-child { border-bottom: none; }
 
-/* ---------- Sanfte Übergänge ---------- */
+/* ---------- Smooth transitions ---------- */
 
 .btn, .btn-icon, .cat-pill, .tab { transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .modal { animation: pop 0.16s ease-out; }
@@ -1133,7 +1133,7 @@ input[type="file"] { font-size: 12px; padding: 7px !important; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* ---------- Ladeansicht statt „Wird geladen …" ---------- */
+/* ---------- Loading view instead of “Loading …” ---------- */
 
 .skelett { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
 .skelett-zeile {
@@ -1145,7 +1145,7 @@ input[type="file"] { font-size: 12px; padding: 7px !important; }
 .skelett-zeile:nth-child(3) { animation-delay: 0.24s; }
 @keyframes schimmern { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
-/* ---------- Dichte Ansicht ---------- */
+/* ---------- Dense view ---------- */
 
 body.dicht .job-card { padding: 10px 12px; }
 body.dicht .jobs-list { gap: 6px; }
@@ -1153,7 +1153,7 @@ body.dicht .job-note, body.dicht .pulse-strip { display: none; }
 body.dicht .stat-tile { padding: 12px 14px; }
 body.dicht .log-entry { padding: 7px 12px; }
 
-/* ---------- Mobil ---------- */
+/* ---------- Mobile ---------- */
 
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; gap: 10px; padding: 12px 14px; }
@@ -1173,7 +1173,7 @@ body.dicht .log-entry { padding: 7px 12px; }
   .warte-datei { flex-wrap: wrap; }
 }
 @media (max-width: 520px) {
-  /* Zwei Spalten beibehalten und Kacheln kürzen — sonst füllen sie den Bildschirm */
+  /* Keep two columns and shorten the tiles — otherwise they fill the screen */
   .stats-strip { grid-template-columns: 1fr 1fr; gap: 8px; }
   .stat-tile { padding: 10px 12px; }
   .stat-tile .sparkline, .stat-tile svg { display: none; }
@@ -1186,7 +1186,7 @@ body.dicht .log-entry { padding: 7px 12px; }
   .pulse-strip { display: none; }
 }
 
-/* ---------- Heller Modus: Nachbesserungen ---------- */
+/* ---------- Light mode: refinements ---------- */
 
 [data-theme="light"] .warte-datei,
 [data-theme="light"] .benutzer-zeile,
@@ -1204,7 +1204,7 @@ body.dicht .log-entry { padding: 7px 12px; }
 [data-theme="light"] .preview-list { background: #F4F2EF; }
 [data-theme="light"] .arbeit-text { color: var(--text); }
 
-/* Mobil: Kopfleisten der Panels umbrechen lassen */
+/* Mobile: let the panel headers wrap */
 @media (max-width: 860px) {
   .panel-head { flex-wrap: wrap; gap: 8px; align-items: flex-start; }
   .panel-head > h2 { flex: 1 1 100%; }
@@ -1216,7 +1216,7 @@ body.dicht .log-entry { padding: 7px 12px; }
   .panel-tools .btn { flex: 0 0 auto; }
 }
 @media (max-width: 520px) {
-  /* Kartenkopf: Name in eigene Zeile, Kennzeichen darunter */
+  /* Card header: name on its own line, markers below */
   .job-card-head { flex-wrap: wrap; row-gap: 4px; }
   .job-name { flex: 1 1 100%; font-size: 14.5px; }
   .job-time { margin-left: 0; }
@@ -1224,14 +1224,14 @@ body.dicht .log-entry { padding: 7px 12px; }
 }
 
 /* ============================================================
-   Korrekturen: kein Aufblinken, gleich hohe Spalten
+   Fixes: no flashing, columns of equal height
    ============================================================ */
 
-/* Die Einblend-Animation lief bei jeder Aktualisierung neu und
-   ließ Karten und Protokollzeilen im Vier-Sekunden-Takt aufblitzen. */
+/* The fade-in animation restarted on every refresh and
+   made cards and log lines flash every four seconds. */
 .job-card, .log-entry { animation: none !important; }
 
-/* Beide Spalten auf gleiche Höhe bringen; die Listen scrollen innen */
+/* Give both columns the same height; the lists scroll inside */
 .layout { align-items: stretch; }
 .layout > .panel { display: flex; flex-direction: column; min-height: 0; }
 .jobs-panel > .jobs-list,
@@ -1241,13 +1241,13 @@ body.dicht .log-entry { padding: 7px 12px; }
 .panel-head { flex-shrink: 0; }
 
 @media (max-width: 860px) {
-  /* Mobil untereinander — dort ist gleiche Höhe unerwünscht */
+  /* Mobile: stacked — equal height is not wanted there */
   .layout > .panel { display: block; }
   .jobs-panel > .jobs-list,
   .log-panel > .log-stream { overflow-y: visible; max-height: none; }
 }
 
-/* ---------- Paket einspielen ---------- */
+/* ---------- Install package ---------- */
 
 .update-einspielen {
   margin-top: 16px; padding-top: 14px;
@@ -1259,7 +1259,7 @@ body.dicht .log-entry { padding: 7px 12px; }
 #update-einspiel-ergebnis.ok { color: var(--success); }
 #update-einspiel-ergebnis.error { color: var(--error); }
 
-/* ---------- Hinweis zur Betriebsart ---------- */
+/* ---------- Hint on the operating mode ---------- */
 
 .betriebsart-hinweis {
   background: var(--bg-inset); border: 1px solid var(--border);
@@ -1272,33 +1272,33 @@ body.dicht .log-entry { padding: 7px 12px; }
 #neustart-ergebnis.ok { color: var(--success); }
 #neustart-ergebnis.error { color: var(--error); }
 
-/* Nochmals senden bei erfolgreichen Übertragungen zurückhaltender darstellen */
+/* Show "send again" more discreetly for successful transfers */
 .retry-btn.erneut-erfolg { color: var(--text-dim); border-color: var(--border); }
 .retry-btn.erneut-erfolg:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ============================================================
-   Ebenen der Dialoge — Bestätigungen müssen immer obenauf liegen
+   Dialog layers — confirmations must always be on top
    ============================================================ */
 
-/* Grundebene: Job-Formular, Einstellungen, Export, Kategorien, Protokoll */
+/* Base layer: job form, settings, export, categories, log */
 #modal-backdrop,
 #transfer-backdrop,
 #settings-backdrop,
 #categories-backdrop,
 #audit-backdrop { z-index: 50; }
 
-/* Ansichten, die aus einem anderen Dialog heraus geöffnet werden */
+/* Views opened from within another dialog */
 #sende-backdrop,
 #warte-backdrop { z-index: 60; }
 
-/* Sicherheitsabfragen liegen über allem — sie werden aus jedem
-   anderen Dialog heraus aufgerufen und müssen bedienbar bleiben */
+/* Safety prompts are above everything — they are opened from any
+   other dialog and must remain usable */
 #confirm-backdrop { z-index: 70; }
 
-/* Meldungen ganz oben, damit sie auch über Abfragen erscheinen */
+/* Messages at the very top so that they also appear above prompts */
 .toast-stack { z-index: 90; }
 
-/* ---------- Versionsnummer im Kopfbereich ---------- */
+/* ---------- Version number in the header ---------- */
 
 .versions-nummer {
   font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
@@ -1313,8 +1313,10 @@ body.dicht .log-entry { padding: 7px 12px; }
 }
 @media (max-width: 520px) { .versions-nummer { display: none; } }
 
-/* Sprachumschalter in der Kopfzeile */
+/* Language switch in the header */
 .btn-sprache {
   font-family: var(--font-mono); font-size: 11px; font-weight: 700;
   letter-spacing: 0.03em; min-width: 34px;
 }
+
+.hint-code { font-size: 11px; color: var(--text); }

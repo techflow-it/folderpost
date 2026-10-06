@@ -1,21 +1,22 @@
-// Aktualisierung durch Hochladen eines ZIP-Pakets.
+// Update by uploading a ZIP package.
 //
-// Ablauf: Paket prüfen → Sicherung des jetzigen Standes → Programmdateien
-// austauschen → Konfiguration und Daten behalten → Neustart.
-// Schlägt etwas fehl, bleibt der alte Stand unangetastet.
+// Steps: check the package → back up the current state → replace the program
+// files → keep configuration and data → restart.
+// If anything fails, the old state stays untouched.
 
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const os = require('os');
 const crypto = require('crypto');
+const i18n = require('./i18n');
 
-// ---------- ZIP lesen (nur Bordmittel) ----------
+// ---------- Reading ZIP files (built-in modules only) ----------
 
 /**
- * Liest ein ZIP-Archiv über das zentrale Verzeichnis am Dateiende.
- * Unterstützt „gespeichert" (0) und „deflate" (8) — mehr nutzt kein Packer
- * für unsere Dateien.
+ * Reads a ZIP archive via the central directory at the end of the file.
+ * Supports "stored" (0) and "deflate" (8) — no packer uses anything else
+ * for our files.
  */
 function zipEintraege(puffer) {
   // End of Central Directory suchen (Signatur 0x06054b50), von hinten
@@ -23,7 +24,7 @@ function zipEintraege(puffer) {
   for (let i = puffer.length - 22; i >= 0 && i > puffer.length - 66000; i -= 1) {
     if (puffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd === -1) throw new Error('Kein gültiges ZIP-Archiv (Verzeichnis nicht gefunden).');
+  if (eocd === -1) throw new Error(i18n.L('Not a valid ZIP archive (directory not found).'));
 
   const anzahl = puffer.readUInt16LE(eocd + 10);
   let pos = puffer.readUInt32LE(eocd + 16);
@@ -48,7 +49,7 @@ function zipEintraege(puffer) {
 
 function zipInhalt(puffer, eintrag) {
   const p = eintrag.lokalVersatz;
-  if (puffer.readUInt32LE(p) !== 0x04034b50) throw new Error(`Beschädigter Eintrag: ${eintrag.name}`);
+  if (puffer.readUInt32LE(p) !== 0x04034b50) throw new Error(i18n.L('Damaged entry: {name}', { name: eintrag.name }));
   const nameLaenge = puffer.readUInt16LE(p + 26);
   const extraLaenge = puffer.readUInt16LE(p + 28);
   const start = p + 30 + nameLaenge + extraLaenge;
@@ -56,31 +57,31 @@ function zipInhalt(puffer, eintrag) {
 
   if (eintrag.methode === 0) return daten;
   if (eintrag.methode === 8) return zlib.inflateRawSync(daten);
-  throw new Error(`Nicht unterstützte Kompression in ${eintrag.name}`);
+  throw new Error(i18n.L('Unsupported compression in {name}', { name: eintrag.name }));
 }
 
 // ---------- Update ----------
 
-// Diese Dateien und Ordner bleiben beim Austausch erhalten
+// These files and folders are kept during the exchange
 const BEHALTEN = new Set(['config.json', 'data', 'runtime', 'node_modules']);
 
 function istGefaehrlich(name) {
-  // Pfade außerhalb des Zielordners abwehren
+  // Reject paths outside the target folder
   return name.includes('..') || path.isAbsolute(name) || name.includes('\\..\\');
 }
 
 /**
- * Spielt ein Paket ein. Gibt eine Zusammenfassung zurück.
- * @param paket   ZIP als Puffer
- * @param benutzer  Name für das Änderungsprotokoll
+ * Installs a package. Returns a summary.
+ * @param paket   ZIP as a buffer
+ * @param benutzer  name for the change log
  */
-function spieleUpdateEin(paket, wurzel, protokolliere) {
+function spieleUpdateEin(paket, wurzel, protokolliere, T = i18n.L) {
   const eintraege = zipEintraege(paket);
-  if (eintraege.length === 0) throw new Error('Das Paket enthält keine Dateien.');
+  if (eintraege.length === 0) throw new Error(T('The package contains no files.'));
 
-  // Gemeinsamen Wurzelordner im Archiv erkennen (z. B. "datei-tool/")
+  // Detect a common root folder in the archive (e.g. "folderpost/")
   const dateien = eintraege.filter((e) => !e.name.endsWith('/'));
-  if (dateien.length === 0) throw new Error('Das Paket enthält nur Ordner.');
+  if (dateien.length === 0) throw new Error(T('The package contains only folders.'));
 
   const ersteEbene = new Set(dateien.map((e) => e.name.split('/')[0]));
   const gemeinsamerOrdner = ersteEbene.size === 1 && dateien.every((e) => e.name.includes('/'))
@@ -91,24 +92,24 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
     ? name.slice(gemeinsamerOrdner.length)
     : name);
 
-  // Prüfen, ob es überhaupt ein Paket dieser Anwendung ist
+  // Check whether this is a package of this application at all
   const namen = dateien.map((e) => relativ(e.name));
   if (!namen.includes('server.js')) {
-    throw new Error('Das Paket enthält keine server.js — vermutlich das falsche Archiv.');
+    throw new Error(T('The package contains no server.js — probably the wrong archive.'));
   }
 
   const gefaehrlich = namen.find((n) => istGefaehrlich(n));
-  if (gefaehrlich) throw new Error(`Unzulässiger Pfad im Paket: ${gefaehrlich}`);
+  if (gefaehrlich) throw new Error(T('Invalid path in the package: {path}', { path: gefaehrlich }));
 
-  // Version aus der package.json des Pakets lesen
+  // Read the version from the package's package.json
   let neueVersion = null;
   const pkgEintrag = dateien.find((e) => relativ(e.name) === 'package.json');
   if (pkgEintrag) {
     try { neueVersion = JSON.parse(zipInhalt(paket, pkgEintrag).toString('utf8')).version || null; }
-    catch { /* ohne Versionsangabe weiter */ }
+    catch { /* continue without a version */ }
   }
 
-  // --- Sicherung des jetzigen Standes ---
+  // --- Back up the current state ---
   const zeit = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const sicherung = path.join(wurzel, 'data', 'update-sicherungen', `stand-${zeit}`);
   fs.mkdirSync(sicherung, { recursive: true });
@@ -129,17 +130,17 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
       const ziel = path.join(sicherung, rel);
       fs.mkdirSync(path.dirname(ziel), { recursive: true });
       fs.copyFileSync(path.join(wurzel, rel), ziel);
-    } catch { /* einzelne Datei überspringen */ }
+    } catch { /* skip this file */ }
   });
 
-  // --- Neue Dateien zuerst vollständig entpacken, dann übernehmen ---
+  // --- Extract the new files completely first, then take them over ---
   const zwischen = fs.mkdtempSync(path.join(os.tmpdir(), 'fp-update-'));
   let geschrieben = 0;
   try {
     dateien.forEach((e) => {
       const rel = relativ(e.name);
       if (!rel) return;
-      // Konfiguration und Daten des Kunden nie überschreiben
+      // Never overwrite the configuration and data of the installation
       const ersterTeil = rel.split('/')[0];
       if (BEHALTEN.has(ersterTeil)) return;
       const ziel = path.join(zwischen, rel);
@@ -148,9 +149,9 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
       geschrieben += 1;
     });
 
-    if (geschrieben === 0) throw new Error('Das Paket enthält keine austauschbaren Dateien.');
+    if (geschrieben === 0) throw new Error(T('The package contains no replaceable files.'));
 
-    // Übernehmen
+    // Take over
     const uebernehmen = (ordner, praefix = '') => {
       for (const e of fs.readdirSync(ordner, { withFileTypes: true })) {
         const rel = praefix + e.name;
@@ -166,7 +167,7 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
     };
     uebernehmen(zwischen);
   } catch (e) {
-    // Bei Fehlern den alten Stand zurückholen
+    // On errors, restore the old state
     try {
       const zurueck = (ordner, praefix = '') => {
         for (const eintrag of fs.readdirSync(ordner, { withFileTypes: true })) {
@@ -179,20 +180,20 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
         }
       };
       zurueck(sicherung);
-    } catch { /* Sicherung bleibt für den Notfall liegen */ }
-    throw new Error(`Einspielen fehlgeschlagen, alter Stand wiederhergestellt: ${e.message}`);
+    } catch { /* the backup stays in place for emergencies */ }
+    throw new Error(T('Installing failed, previous version restored: {error}', { error: e.message }));
   } finally {
-    try { fs.rmSync(zwischen, { recursive: true, force: true }); } catch { /* egal */ }
+    try { fs.rmSync(zwischen, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
-  // Alte Sicherungen ausdünnen — die letzten fünf genügen
+  // Thin out old backups — the last five are enough
   try {
     const ordner = path.join(wurzel, 'data', 'update-sicherungen');
     const alle = fs.readdirSync(ordner).filter((n) => n.startsWith('stand-')).sort();
     alle.slice(0, Math.max(0, alle.length - 5)).forEach((n) => {
-      try { fs.rmSync(path.join(ordner, n), { recursive: true, force: true }); } catch { /* egal */ }
+      try { fs.rmSync(path.join(ordner, n), { recursive: true, force: true }); } catch { /* ignore */ }
     });
-  } catch { /* egal */ }
+  } catch { /* ignore */ }
 
   if (typeof protokolliere === 'function') protokolliere({ neueVersion, dateien: geschrieben, sicherung });
 
@@ -201,7 +202,7 @@ function spieleUpdateEin(paket, wurzel, protokolliere) {
     neueVersion,
     ersetzteDateien: geschrieben,
     sicherung: path.basename(sicherung),
-    hinweis: 'Die Anwendung startet gleich neu. Konfiguration, Protokolle und Benutzer bleiben erhalten.',
+    hinweis: T('The application will restart shortly. Configuration, logs and users are kept.'),
   };
 }
 

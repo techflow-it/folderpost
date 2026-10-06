@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anmelden · Folderpost</title>
+<title>Sign in · Folderpost</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1B1D'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23D0764C'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/style.css">
 <style>
@@ -98,39 +98,39 @@
       <span class="brand-mark"><span class="brand-mark-dot"></span></span>
       <div>
         <h1 id="marke-name">Folderpost</h1>
-        <p id="marke-sub">Bitte anmelden</p>
+        <p id="marke-sub">Please sign in</p>
       </div>
     </div>
 
     <div class="anmelde-fehler" id="fehler"></div>
 
     <form class="anmelde-form" id="form">
-      <label for="name">Benutzername</label>
+      <label for="name">User name</label>
       <input type="text" id="name" autocomplete="username" autofocus required>
 
-      <label for="passwort">Passwort</label>
+      <label for="passwort">Password</label>
       <input type="password" id="passwort" autocomplete="current-password" required>
 
-      <button type="submit" class="btn btn-primary" id="btn">Anmelden</button>
+      <button type="submit" class="btn btn-primary" id="btn">Sign in</button>
     </form>
   </div>
 
   <div class="anmelde-rechts">
-    <p class="status-titel">Betriebsstatus</p>
+    <p class="status-titel">Operating status</p>
 
     <div class="status-kachel">
       <div class="status-wert" id="s-aktiv">–</div>
-      <div class="status-name"><span class="status-punkt" id="s-punkt"></span><span id="s-aktiv-text">aktive Jobs</span></div>
+      <div class="status-name"><span class="status-punkt" id="s-punkt"></span><span id="s-aktiv-text">active jobs</span></div>
     </div>
 
     <div class="status-zeile">
       <div class="status-kachel">
         <div class="status-wert ok" id="s-erfolg">–</div>
-        <div class="status-name">Erfolge · 7 Tage</div>
+        <div class="status-name">Successes · 7 days</div>
       </div>
       <div class="status-kachel">
         <div class="status-wert fehler" id="s-fehler">–</div>
-        <div class="status-name">Fehler · 7 Tage</div>
+        <div class="status-name">Errors · 7 days</div>
       </div>
     </div>
 
@@ -139,11 +139,13 @@
       <div class="job-liste" id="job-liste"></div>
     </div>
 
-    <p class="status-fuss" id="s-letzte">Letzte Übertragung: –</p>
+    <p class="status-fuss" id="s-letzte">Last transfer: –</p>
     <p class="status-fuss" id="s-version" style="margin-top:-8px"></p>
   </div>
 </div>
 
+<script src="/i18n-catalog.js"></script>
+<script src="/i18n.js"></script>
 <script>
   function escapeHtml(t) {
     return String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -153,17 +155,17 @@
     if (!iso) return '–';
     const d = new Date(iso);
     const minuten = Math.round((Date.now() - d.getTime()) / 60000);
-    if (minuten < 1) return 'gerade eben';
-    if (minuten < 60) return `vor ${minuten} Min.`;
-    if (minuten < 1440) return `vor ${Math.round(minuten / 60)} Std.`;
-    return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    if (minuten < 1) return t('just now');
+    if (minuten < 60) return t('{n} min ago', { n: minuten });
+    if (minuten < 1440) return t('{n} h ago', { n: Math.round(minuten / 60) });
+    return d.toLocaleString(I18n.locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   }
 
   async function ladeStatus() {
     try {
-      const r = await fetch('/api/oeffentlicher-status').then((x) => x.json());
+      const r = await fetch('/api/oeffentlicher-status', { headers: { 'X-Language': I18n.lang } }).then((x) => x.json());
       document.getElementById('s-aktiv').textContent = `${r.jobsAktiv}/${r.jobsGesamt}`;
-      document.getElementById('s-aktiv-text').textContent = r.jobsAktiv > 0 ? 'Jobs laufen' : 'kein Job aktiv';
+      document.getElementById('s-aktiv-text').textContent = r.jobsAktiv > 0 ? t('jobs running') : t('no job active');
       document.getElementById('s-punkt').classList.toggle('aus', r.jobsAktiv === 0);
       if (r.akzentFarbe) {
         document.documentElement.style.setProperty('--accent', r.akzentFarbe);
@@ -187,18 +189,18 @@
       }
       if (r.anzeigeName) {
         document.getElementById('marke-name').textContent = r.anzeigeName;
-        document.getElementById('marke-sub').textContent = 'Folderpost · bitte anmelden';
+        document.getElementById('marke-sub').textContent = t('Folderpost · please sign in');
       }
       document.getElementById('s-erfolg').textContent = r.erfolge7;
       document.getElementById('s-fehler').textContent = r.fehler7;
-      document.getElementById('s-letzte').textContent = 'Letzte Übertragung: ' + fmtZeit(r.letzteUebertragung);
-      if (r.version) document.getElementById('s-version').textContent = 'Programmstand v' + r.version;
+      document.getElementById('s-letzte').textContent = t('Last transfer: {time}', { time: fmtZeit(r.letzteUebertragung) });
+      if (r.version) document.getElementById('s-version').textContent = t('Version {v}', { v: r.version });
 
       const bereich = document.getElementById('job-liste-bereich');
       if (Array.isArray(r.jobs) && r.jobs.length) {
         const text = {
-          bereit: 'läuft', laeuft: 'überträgt', fehlerhaft: 'Fehler',
-          letzterFehler: 'letzter Lauf fehlerhaft', ausserhalb: 'außerhalb Zeitfenster', pausiert: 'pausiert',
+          bereit: t('running'), laeuft: t('transferring'), fehlerhaft: t('Errors'),
+          letzterFehler: t('last run failed'), ausserhalb: t('outside time window'), pausiert: t('paused'),
         };
         document.getElementById('job-liste').innerHTML = r.jobs.map((j) => `
           <div class="job-eintrag ${j.zustand}">
@@ -206,14 +208,14 @@
             <span class="name" title="${escapeHtml(j.name)}">${escapeHtml(j.name)}</span>
             <span class="lage">${j.aktuelleDatei
               ? escapeHtml(j.aktuelleDatei) + (j.weitereDateien ? ` +${j.weitereDateien}` : '')
-              : (j.zustand === 'fehlerhaft' ? j.fehlerFolge + '× Fehler' : text[j.zustand])}</span>
+              : (j.zustand === 'fehlerhaft' ? t('{n}× failed', { n: j.fehlerFolge }) : text[j.zustand])}</span>
           </div>`).join('');
         bereich.style.display = 'block';
       } else {
         bereich.style.display = 'none';
       }
     } catch {
-      document.getElementById('s-letzte').textContent = 'Status nicht abrufbar';
+      document.getElementById('s-letzte').textContent = t('Status not available');
     }
   }
   ladeStatus();
@@ -224,19 +226,19 @@
     e.preventDefault();
     const btn = document.getElementById('btn');
     btn.disabled = true;
-    btn.textContent = 'Anmelden …';
+    btn.textContent = t('Signing in …');
     fehlerEl.classList.remove('sichtbar');
     try {
       const antwort = await fetch('/api/anmelden', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Language': I18n.lang },
         body: JSON.stringify({
           name: document.getElementById('name').value,
           passwort: document.getElementById('passwort').value,
         }),
       });
       const daten = await antwort.json();
-      if (!antwort.ok) throw new Error(daten.error || 'Anmeldung fehlgeschlagen');
+      if (!antwort.ok) throw new Error(daten.error || t('Sign-in failed'));
       window.location.href = '/';
     } catch (err) {
       fehlerEl.textContent = err.message;
@@ -244,7 +246,7 @@
       document.getElementById('passwort').value = '';
       document.getElementById('passwort').focus();
       btn.disabled = false;
-      btn.textContent = 'Anmelden';
+      btn.textContent = t('Sign in');
     }
   });
 </script>
