@@ -1634,7 +1634,7 @@ function renderTimelineChart(perDay) {
     <div class="chart-footer">
       <span class="chart-legend-item"><i style="background:var(--success)"></i>${t('Success')}</span>
       <span class="chart-legend-item"><i style="background:var(--error)"></i>${t('Errors')}</span>
-      <span class="chart-summary">${t('{total} transfers on {days} day(s)', { total: gesamt, days: totalDays })}${fehler ? ` · <span style="color:var(--error)">${t('{n} errors', { n: fehler })}</span>` : ''}${maxJobs ? ' · ' + t('up to {n} job(s)/day', { n: maxJobs }) : ''}</span>
+      <span class="chart-summary">${t('{total} transfer(s) on {days} day(s)', { total: gesamt, days: totalDays })}${fehler ? ` · <span style="color:var(--error)">${t('{n} errors', { n: fehler })}</span>` : ''}${maxJobs ? ' · ' + t('up to {n} job(s)/day', { n: maxJobs }) : ''}</span>
     </div>`;
 }
 

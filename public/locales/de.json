@@ -362,7 +362,7 @@
  "{day}: no transfers": "{day}: keine Übertragungen",
  "{day}: {total} transfer(s) — {ok} successful, {err} failed": "{day}: {total} Übertragung(en) — {ok} Erfolg, {err} Fehler",
  "{n} job(s)": "{n} Job(s)",
- "{total} transfers on {days} day(s)": "{total} Übertragungen an {days} Tag(en)",
+ "{total} transfer(s) on {days} day(s)": "{total} Übertragung(en) an {days} Tag(en)",
  "{n} errors": "{n} Fehler",
  "up to {n} job(s)/day": "bis zu {n} Job(s)/Tag",
  "{name}: {total} transfer(s) — {ok} successful, {err} failed": "{name}: {total} Übertragung(en) — {ok} Erfolg, {err} Fehler",
