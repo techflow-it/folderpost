@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // QR code decoder in plain JavaScript.
 // Works on a greyscale image and needs no external programs.
 

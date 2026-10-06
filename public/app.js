@@ -524,7 +524,7 @@ function renderJobCard(job, showCategoryTag) {
         ${categoryTag}${umwandlungBadge}${stapelBadge}${dryRunBadge}${archivedBadge}${pausedBadge}${outsideScheduleBadge}
         <span class="job-time" title="${job.runtime.lastRunTs ? escapeHtml(fmtDateTime(job.runtime.lastRunTs)) : ''}">${job.runtime.lastRunTs ? fmtRelativ(job.runtime.lastRunTs) : t('never run')}</span>
       </div>
-      <p class="job-meta pfad-zeile" data-no-translate title=""${escapeHtml(job.sourcePath)} → ${escapeHtml(zielBeschreibung(job))}">
+      <p class="job-meta pfad-zeile" data-no-translate title="${escapeHtml(job.sourcePath)} → ${escapeHtml(zielBeschreibung(job))}">
         <span class="pfad">${escapeHtml(job.sourcePath)}</span>
         <span class="job-arrow">→</span>
         <span class="pfad">${escapeHtml(zielBeschreibung(job))}</span>${multiTargetNote}${failureBadge}
@@ -773,7 +773,7 @@ function renderLogEntry(l) {
         <span class="msg" data-full="${escapeHtml(full)}" data-short="${escapeHtml(shortText)}">${escapeHtml(shortText)}${isLong ? `<span class="expand-hint">${t('show more')}</span>` : ''}</span>
         ${retryBtn}${downloadBtn}${pruefBtn}
       </span>
-      <span class="log-status ${l.status}">${l.httpStatus ? 'HTTP ' + l.httpStatus : (l.status === 'error' ? t('Error') : '')}</span>
+      <span class="log-status ${l.status}">${statusLabel(l)}</span>
     </div>`;
 }
 
@@ -1054,6 +1054,14 @@ function copyRow(label, value) {
   return `<div class="drawer-meta-row"><span class="k">${label}</span><span class="v">${escapeHtml(value)}<button type="button" class="copy-btn" data-copy="${escapeHtml(value)}" title="${t('Copy')}" aria-label="${t('Copy {what}', { what: label })}"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" stroke-width="1.1"/><path d="M2.5 8.5v-6A1 1 0 0 1 3.5 1.5h6" stroke="currentColor" stroke-width="1.1"/></svg></button></span></div>`;
 }
 
+// Status column of the log: HTTP code, or the delivery type for folder and e-mail targets
+function statusLabel(l) {
+  if (l.httpStatus === 'ORDNER') return t('Folder');
+  if (l.httpStatus === 'MAIL') return t('E-mail');
+  if (l.httpStatus) return 'HTTP ' + escapeHtml(l.httpStatus);
+  return l.status === 'error' ? t('Error') : '';
+}
+
 const STATUS_TEXT = { running: 'running', success: 'success', error: 'error', idle: 'idle' };
 const WOCHENTAG = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
 
@@ -1070,9 +1078,12 @@ function detailMetaHtml(job) {
     ${job.notes ? `<div class="drawer-meta-row" style="flex-direction:column;align-items:flex-start;gap:5px"><span class="k">${t('Note')}</span><span class="v" style="text-align:left;font-family:var(--font-sans);white-space:pre-wrap;justify-content:flex-start">${escapeHtml(job.notes)}</span></div>` : ''}
     ${copyRow(t('Source folder'), job.sourcePath)}
     <div class="drawer-meta-row"><span class="k">${t('File filter')}</span><span class="v">${escapeHtml(job.filePattern)}</span></div>
-    ${copyRow(t('Target URL'), job.targetUrl)}
-    <div class="drawer-meta-row"><span class="k">${t('Method')}</span><span class="v">${job.method}</span></div>
-    <div class="drawer-meta-row"><span class="k">${t('Authentication')}</span><span class="v">${job.authType === 'basic' ? `Basic Auth (${escapeHtml(job.authUser || '–')})` : t('None')}</span></div>
+    ${job.zielTyp === 'ordner' ? copyRow(t('Target folder'), job.zielOrdner)
+      : job.zielTyp === 'email' ? `<div class="drawer-meta-row"><span class="k">${t('Recipient')}</span><span class="v">${escapeHtml(job.mailAn || '–')}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('SMTP server')}</span><span class="v">${escapeHtml(job.smtpHost || '–')}:${escapeHtml(job.smtpPort)}</span></div>`
+      : `${copyRow(t('Target URL'), job.targetUrl)}
+    <div class="drawer-meta-row"><span class="k">${t('Method')}</span><span class="v">${escapeHtml(job.method)}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('Authentication')}</span><span class="v">${job.authType === 'basic' ? `Basic Auth (${escapeHtml(job.authUser || '–')})` : t('None')}</span></div>`}
     <div class="drawer-meta-row"><span class="k">${t('Scan interval')}</span><span class="v">${job.pollIntervalSec}s</span></div>
     ${job.processor === 'pdf-qr-json' ? `<div class="drawer-meta-row"><span class="k">${t('Processing')}</span><span class="v">${t('PDF → JSON (QR on page {page}, {dpi} dpi)', { page: job.qrSeite, dpi: job.qrDpi })}</span></div>` : ''}
     ${job.dryRun ? `<div class="drawer-meta-row"><span class="k">${t('Test mode')}</span><span class="v" style="color:var(--warning)">${t('active — nothing is sent')}</span></div>` : ''}
@@ -1082,8 +1093,8 @@ function detailMetaHtml(job) {
     ${job.minFileAgeSec > 0 ? `<div class="drawer-meta-row"><span class="k">${t('Settle time')}</span><span class="v">${t('{n}s unchanged', { n: job.minFileAgeSec })}</span></div>` : ''}
     ${job.maxFileSizeMB > 0 ? `<div class="drawer-meta-row"><span class="k">${t('Max. file size')}</span><span class="v">${job.maxFileSizeMB} MB</span></div>` : ''}
     ${job.scheduleEnabled ? `<div class="drawer-meta-row"><span class="k">${t('Time window')}</span><span class="v">${(job.activeDays || []).map((d) => t(WOCHENTAG[d] || d)).join(' ')} · ${job.timeStart}–${job.timeEnd}</span></div>` : ''}
-    <div class="drawer-meta-row"><span class="k">${t('On success')}</span><span class="v">${job.onSuccess === 'archive' ? '→ ' + job.archiveSubfolder : t('Leave file')}</span></div>
-    <div class="drawer-meta-row"><span class="k">${t('On error')}</span><span class="v">${job.onError === 'archive' ? '→ ' + job.errorSubfolder : t('Leave file')}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('On success')}</span><span class="v">${job.onSuccess === 'archive' ? '→ ' + escapeHtml(job.archiveSubfolder) : t('Leave file')}</span></div>
+    <div class="drawer-meta-row"><span class="k">${t('On error')}</span><span class="v">${job.onError === 'archive' ? '→ ' + escapeHtml(job.errorSubfolder) : t('Leave file')}</span></div>
     ${job.runtime.consecutiveFailures >= 3 ? `<div class="drawer-meta-row"><span class="k">${t('Error streak')}</span><span class="v" style="color:var(--error)">${t('{n}× in a row', { n: job.runtime.consecutiveFailures })}</span></div>` : ''}
   `;
 }

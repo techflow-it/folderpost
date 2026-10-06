@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Update by uploading a ZIP package.
 //
 // Steps: check the package → back up the current state → replace the program

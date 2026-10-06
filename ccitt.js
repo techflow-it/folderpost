@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Decoder for CCITT Group 4 images (CCITTFaxDecode, K < 0).
 // This is the usual compression for scanned black-and-white pages.
 //

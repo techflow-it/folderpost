@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Delivery methods besides HTTP: network folder and e-mail.
 // Both work without third-party libraries.
 
@@ -177,7 +180,10 @@ function sendeUeberSmtp(cfg, nachricht, empfaenger, cb) {
       await smtpZeile(sock, `MAIL FROM:<${von}>\r\n`);
       for (const e of empfaenger) await smtpZeile(sock, `RCPT TO:<${e}>\r\n`);
       await smtpZeile(sock, 'DATA\r\n');
-      const antwort = await smtpZeile(sock, nachricht + '\r\n.\r\n');
+      // CRLF line endings and dot-stuffing (RFC 5321 4.5.2): a line starting with
+      // "." would otherwise end the message early.
+      const daten = nachricht.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+      const antwort = await smtpZeile(sock, daten + '\r\n.\r\n');
       try { sock.write('QUIT\r\n'); } catch { /* ignore */ }
 
       clearTimeout(ablauf);

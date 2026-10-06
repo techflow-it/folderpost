@@ -4,8 +4,28 @@
   "description": "Self-hosted folder-to-API file transfer with QR-based document splitting",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
+  "keywords": [
+    "file-transfer",
+    "folder-watcher",
+    "curl",
+    "document-scanning",
+    "qr-code",
+    "pdf",
+    "self-hosted"
+  ],
+  "homepage": "https://github.com/TechFlow-IT/folderpost#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TechFlow-IT/folderpost.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TechFlow-IT/folderpost/issues"
+  },
+  "author": "TechFlow IT",
+  "license": "GPL-3.0-or-later",
   "engines": {
     "node": ">=18"
   }

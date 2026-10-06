@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Processing steps between "file found" and "send".
 // Currently: convert scanned PDFs with a QR code into a JSON message.
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Splits a batch scan into individual documents at QR codes.
 //
 // Method: the embedded page images are read from the PDF one after another

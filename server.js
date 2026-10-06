@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Folderpost — backend
 // Plain Node.js built-in modules, no external npm packages required.
 
@@ -2961,9 +2964,12 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const PORT = config.port || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Folderpost is running on http://0.0.0.0:${PORT}`);
+// PORT/HOST environment variables take precedence over config.json.
+// Use HOST=127.0.0.1 behind a reverse proxy.
+const PORT = Number(process.env.PORT) || config.port || 3000;
+const HOST = process.env.HOST || config.host || '0.0.0.0';
+server.listen(PORT, HOST, () => {
+  console.log(`Folderpost is running on http://${HOST}:${PORT}`);
   runSelfCheck();
   cleanupArchives();
 });

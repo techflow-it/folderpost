@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TechFlow IT
+
 // Baseline JPEG decoder in plain JavaScript.
 // Returns a greyscale image — that is all barcode detection needs.
 // Supports sequential baseline JPEGs (SOF0/SOF1), colour and greyscale images.
